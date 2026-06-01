@@ -2,9 +2,17 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Virtual Private Cloud (VPC) for my personal production worthy projects
 
-Metadata:
+Metadata: {}
 
 Parameters:
+  Environment:
+    Type: String
+    Default: Prod
+    AllowedValues:
+      - Dev
+      - Staging
+      - Prod
+
   VpcCIDR:
     Type: String
     Default: 10.0.0.0/16
@@ -25,6 +33,6 @@ Parameters:
     Type: String
     Default: 10.0.3.0/24
 
-Resources:
+Resources: {}
 
-Outputs:
+Outputs: {}
