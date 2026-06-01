@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared networking infrastructure for all projects
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.{AWS::Region}.com/shared/networking/vpc.yaml"
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !GetAtt VPCStack.Outputs.VpcId
+
+  PublicSubnet01Id:
+    Description: Public Subnet 01
+    Value: !GetAtt VPCStack.Outputs.PublicSubnet01Id
+
+  PublicSubnet02Id:
+    Description: Public Subnet 02
+    Value: !GetAtt VPCStack.Outputs.PublicSubnet02Id
+
+  PrivateSubnet01Id:
+    Description: Private Subnet 01
+    Value: !GetAtt VPCStack.Outputs.PrivateSubnet01Id
+
+  PrivateSubnet02Id:
+    Description: Private Subnet 02
+    Value: !GetAtt VPCStack.Outputs.PrivateSubnet02Id

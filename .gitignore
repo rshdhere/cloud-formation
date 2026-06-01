@@ -1,3 +1,4 @@
 .env
 .env.production
+transcoding-infra_accessKeys.csv
 AGENTS.md
