@@ -7,11 +7,11 @@ Metadata: {}
 Parameters:
   Environment:
     Type: String
-    Default: Prod
+    Default: prod
     AllowedValues:
-      - Dev
-      - Staging
-      - Prod
+      - dev
+      - staging
+      - prod
 
   VpcCIDR:
     Type: String
