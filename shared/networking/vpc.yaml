@@ -1,2 +1,11 @@
+---
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Virtual Private Cloud (VPC) for my personal production worthy projects
+
+Metadata: template metadata
+
+Parameters: set of parameters
+
+Resources: set of resources
+
+Outputs: set of outputs
