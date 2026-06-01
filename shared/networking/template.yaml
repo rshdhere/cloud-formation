@@ -10,7 +10,7 @@ Resources:
   VPCStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.com/shared/networking/vpc.yaml"
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/networking/vpc.yaml"
 
 Outputs:
   VpcId:
