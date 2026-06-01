@@ -2,10 +2,21 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Virtual Private Cloud (VPC) for my personal production worthy projects
 
-Metadata: template metadata
+Metadata:
 
-Parameters: set of parameters
+Parameters:
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
 
-Resources: set of resources
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.0.0/24
 
-Outputs: set of outputs
+  PublicSubner2CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+
+Resources:
+
+Outputs:
