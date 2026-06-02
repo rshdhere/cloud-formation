@@ -17,7 +17,7 @@ Parameters:
 
   DatabaseName:
     Type: String
-    Default: transcoding-db
+    Default: transcodingDB
 
   DatabaseUsername:
     Type: String
