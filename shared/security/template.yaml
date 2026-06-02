@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared security infrastructure for all projects
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+Resources:
+  SecurityGroupsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/security/security-groups.yaml"
+
+      Parameters:
+        VpcId: !ImportValue shared-networking-VpcId
+
+Outputs:
+  AlbSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !GetAtt SecurityGroupsStack.Outputs.AlbSecurityGroupId
+
+  AppSecurityGroupId:
+    Description: Application Security Group ID
+    Value: !GetAtt SecurityGroupsStack.Outputs.AppSecurityGroupId
+
+  DatabaseSecurityGroupId:
+    Description: Database Security Group ID
+    Value: !GetAtt SecurityGroupsStack.Outputs.DatabaseSecurityGroupId

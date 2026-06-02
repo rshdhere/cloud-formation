@@ -16,19 +16,29 @@ Outputs:
   VpcId:
     Description: VPC ID
     Value: !GetAtt VPCStack.Outputs.VpcId
+    Export:
+      Name: shared-networking-VpcId
 
   PublicSubnet01Id:
     Description: Public Subnet 01
     Value: !GetAtt VPCStack.Outputs.PublicSubnet01Id
+    Export:
+      Name: shared-networking-PublicSubnet01Id
 
   PublicSubnet02Id:
     Description: Public Subnet 02
     Value: !GetAtt VPCStack.Outputs.PublicSubnet02Id
+    Export:
+      Name: shared-networking-PublicSubnet02Id
 
   PrivateSubnet01Id:
     Description: Private Subnet 01
     Value: !GetAtt VPCStack.Outputs.PrivateSubnet01Id
+    Export:
+      Name: shared-networking-PrivateSubnet01Id
 
   PrivateSubnet02Id:
     Description: Private Subnet 02
     Value: !GetAtt VPCStack.Outputs.PrivateSubnet02Id
+    Export:
+      Name: shared-networking-PrivateSubnet02Id
