@@ -43,10 +43,10 @@ Resources:
         - Key: Name
           Value: app-security-group
 
-  DatabaseSecurityGroup:
+  ProxySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow PostgreSQL traffic from application
+      GroupDescription: Allow traffic from application to RDS Proxy
       VpcId: !Ref VpcId
 
       SecurityGroupIngress:
@@ -54,6 +54,22 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           SourceSecurityGroupId: !Ref AppSecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: proxy-security-group
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow PostgreSQL traffic from RDS Proxy
+      VpcId: !Ref VpcId
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ProxySecurityGroup
 
       Tags:
         - Key: Name
@@ -71,6 +87,12 @@ Outputs:
     Value: !Ref AppSecurityGroup
     Export:
       Name: !Sub "${AWS::StackName}-AppSecurityGroupId"
+
+  ProxySecurityGroupId:
+    Description: Proxy Security Group ID
+    Value: !Ref ProxySecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ProxySecurityGroupId"
 
   DatabaseSecurityGroupId:
     Description: Database Security Group ID

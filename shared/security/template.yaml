@@ -28,6 +28,12 @@ Outputs:
     Export:
       Name: shared-security-AppSecurityGroupId
 
+  ProxySecurityGroupId:
+    Description: Proxy Security Group ID
+    Value: !GetAtt SecurityGroupsStack.Outputs.ProxySecurityGroupId
+    Export:
+      Name: shared-security-ProxySecurityGroupId
+
   DatabaseSecurityGroupId:
     Description: Database Security Group ID
     Value: !GetAtt SecurityGroupsStack.Outputs.DatabaseSecurityGroupId
