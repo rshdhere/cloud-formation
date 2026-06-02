@@ -12,7 +12,7 @@ Parameters:
   DatabaseInstanceIdentifier:
     Type: String
 
-  DatabaseSecurityGroupId:
+  ProxySecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
 
   PrivateSubnet01Id:
@@ -83,7 +83,7 @@ Resources:
         - !Ref PrivateSubnet02Id
 
       VpcSecurityGroupIds:
-        - !Ref DatabaseSecurityGroupId
+        - !Ref ProxySecurityGroupId
 
       Tags:
         - Key: Name

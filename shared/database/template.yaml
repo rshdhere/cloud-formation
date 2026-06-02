@@ -26,6 +26,19 @@ Resources:
         PrivateSubnet02Id: !ImportValue shared-networking-PrivateSubnet02Id
         DatabaseSecurityGroupId: !ImportValue shared-security-DatabaseSecurityGroupId
 
+  RDSProxyStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/database/rds-proxy.yaml"
+
+      Parameters:
+        Environment: !Ref Environment
+        DatabaseSecretArn: !GetAtt PostgreSQLStack.Outputs.DatabaseSecretArn
+        DatabaseInstanceIdentifier: !GetAtt PostgreSQLStack.Outputs.DatabaseInstanceIdentifier
+        PrivateSubnet01Id: !ImportValue shared-networking-PrivateSubnet01Id
+        PrivateSubnet02Id: !ImportValue shared-networking-PrivateSubnet02Id
+        ProxySecurityGroupId: !ImportValue shared-security-ProxySecurityGroupId
+
 Outputs:
   DatabaseEndpoint:
     Description: PostgreSQL endpoint
@@ -46,3 +59,19 @@ Outputs:
   DatabaseInstanceIdentifier:
     Description: Database instance identifier
     Value: !GetAtt PostgreSQLStack.Outputs.DatabaseInstanceIdentifier
+
+  ProxyName:
+    Description: RDS Proxy name
+    Value: !GetAtt RDSProxyStack.Outputs.ProxyName
+
+  ProxyArn:
+    Description: RDS Proxy ARN
+    Value: !GetAtt RDSProxyStack.Outputs.ProxyArn
+
+  ProxyEndpoint:
+    Description: RDS Proxy endpoint
+    Value: !GetAtt RDSProxyStack.Outputs.ProxyEndpoint
+
+  ProxyRoleArn:
+    Description: IAM role used by RDS Proxy
+    Value: !GetAtt RDSProxyStack.Outputs.ProxyRoleArn
