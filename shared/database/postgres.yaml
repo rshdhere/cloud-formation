@@ -41,7 +41,6 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       Engine: postgres
-      EngineVersion: "16.8"
 
       DBInstanceClass: db.t4g.micro
 
