@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: RDS Proxy for PostgreSQL
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  DatabaseSecretArn:
+    Type: String
+
+  DatabaseInstanceIdentifier:
+    Type: String
+
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  PrivateSubnet01Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet02Id:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  RDSProxyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Environment}-rds-proxy-role"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - rds.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  RDSProxySecretsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${Environment}-rds-proxy-secrets"
+
+      Roles:
+        - !Ref RDSProxyRole
+
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadDatabaseSecret
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Ref DatabaseSecretArn
+
+  RDSProxy:
+    Type: AWS::RDS::DBProxy
+    DependsOn:
+      - RDSProxySecretsPolicy
+
+    Properties:
+      DBProxyName: !Sub "${Environment}-postgres-proxy"
+
+      EngineFamily: POSTGRESQL
+
+      RoleArn: !GetAtt RDSProxyRole.Arn
+
+      IdleClientTimeout: 1800
+
+      RequireTLS: true
+
+      DebugLogging: false
+
+      Auth:
+        - AuthScheme: SECRETS
+          SecretArn: !Ref DatabaseSecretArn
+          IAMAuth: DISABLED
+
+      VpcSubnetIds:
+        - !Ref PrivateSubnet01Id
+        - !Ref PrivateSubnet02Id
+
+      VpcSecurityGroupIds:
+        - !Ref DatabaseSecurityGroupId
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-postgres-proxy"
+
+  RDSProxyTargetGroup:
+    Type: AWS::RDS::DBProxyTargetGroup
+    Properties:
+      DBProxyName: !Ref RDSProxy
+
+      TargetGroupName: default
+
+      DBInstanceIdentifiers:
+        - !Ref DatabaseInstanceIdentifier
+
+      ConnectionPoolConfigurationInfo:
+        MaxConnectionsPercent: 90
+        MaxIdleConnectionsPercent: 50
+        ConnectionBorrowTimeout: 120
+
+Outputs:
+  ProxyName:
+    Description: RDS Proxy Name
+    Value: !Ref RDSProxy
+
+  ProxyArn:
+    Description: RDS Proxy ARN
+    Value: !GetAtt RDSProxy.DBProxyArn
+
+  ProxyEndpoint:
+    Description: RDS Proxy Endpoint
+    Value: !GetAtt RDSProxy.Endpoint
+
+  ProxyRoleArn:
+    Description: IAM Role used by RDS Proxy
+    Value: !GetAtt RDSProxyRole.Arn

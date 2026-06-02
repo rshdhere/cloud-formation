@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: PostgreSQL database
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  PrivateSubnet01Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet02Id:
+    Type: AWS::EC2::Subnet::Id
+
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  DatabaseName:
+    Type: String
+    Default: transcoding-db
+
+  DatabaseUsername:
+    Type: String
+    Default: postgres
+
+Resources:
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: PostgreSQL subnet group
+
+      SubnetIds:
+        - !Ref PrivateSubnet01Id
+        - !Ref PrivateSubnet02Id
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-postgres-subnet-group"
+
+  PostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      EngineVersion: "17.4"
+
+      DBInstanceClass: db.t4g.micro
+
+      AllocatedStorage: 20
+      MaxAllocatedStorage: 100
+
+      StorageType: gp3
+      StorageEncrypted: true
+
+      MultiAZ: true
+
+      DBName: !Ref DatabaseName
+
+      MasterUsername: !Ref DatabaseUsername
+      ManageMasterUserPassword: true
+
+      PubliclyAccessible: false
+
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroupId
+
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+
+      BackupRetentionPeriod: 7
+
+      DeletionProtection: true
+
+      EnablePerformanceInsights: true
+
+      AutoMinorVersionUpgrade: true
+
+      CopyTagsToSnapshot: true
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-postgres"
+
+Outputs:
+  DatabaseEndpoint:
+    Description: Database endpoint
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
+
+  DatabasePort:
+    Description: Database port
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Port
+
+  DatabaseArn:
+    Description: Database ARN
+    Value: !Sub "${PostgreSQLDatabase.DBInstanceArn}"
+
+  DatabaseSecretArn:
+    Description: RDS managed secret ARN
+    Value: !GetAtt PostgreSQLDatabase.MasterUserSecret.SecretArn
+
+  DatabaseInstanceIdentifier:
+    Description: Database instance identifier
+    Value: !Ref PostgreSQLDatabase
