@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared database infrastructure
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  PostgreSQLStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/database/postgres.yaml"
+
+      Parameters:
+        Environment: !Ref Environment
+        PrivateSubnet01Id: !ImportValue shared-networking-PrivateSubnet01Id
+        PrivateSubnet02Id: !ImportValue shared-networking-PrivateSubnet02Id
+        DatabaseSecurityGroupId: !ImportValue shared-security-DatabaseSecurityGroupId
+
+Outputs:
+  DatabaseEndpoint:
+    Description: PostgreSQL endpoint
+    Value: !GetAtt PostgreSQLStack.Outputs.DatabaseEndpoint
+
+  DatabasePort:
+    Description: PostgreSQL port
+    Value: !GetAtt PostgreSQLStack.Outputs.DatabasePort
+
+  DatabaseArn:
+    Description: PostgreSQL ARN
+    Value: !GetAtt PostgreSQLStack.Outputs.DatabaseArn
+
+  DatabaseSecretArn:
+    Description: Secrets Manager secret ARN
+    Value: !GetAtt PostgreSQLStack.Outputs.DatabaseSecretArn
+
+  DatabaseInstanceIdentifier:
+    Description: Database instance identifier
+    Value: !GetAtt PostgreSQLStack.Outputs.DatabaseInstanceIdentifier

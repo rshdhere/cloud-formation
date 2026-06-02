@@ -19,11 +19,17 @@ Outputs:
   AlbSecurityGroupId:
     Description: ALB Security Group ID
     Value: !GetAtt SecurityGroupsStack.Outputs.AlbSecurityGroupId
+    Export:
+      Name: shared-security-AlbSecurityGroupId
 
   AppSecurityGroupId:
     Description: Application Security Group ID
     Value: !GetAtt SecurityGroupsStack.Outputs.AppSecurityGroupId
+    Export:
+      Name: shared-security-AppSecurityGroupId
 
   DatabaseSecurityGroupId:
     Description: Database Security Group ID
     Value: !GetAtt SecurityGroupsStack.Outputs.DatabaseSecurityGroupId
+    Export:
+      Name: shared-security-DatabaseSecurityGroupId
