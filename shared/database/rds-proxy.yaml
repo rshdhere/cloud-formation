@@ -34,15 +34,13 @@ Resources:
                 - rds.amazonaws.com
             Action:
               - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref RDSProxySecretsPolicy
 
   RDSProxySecretsPolicy:
-    Type: AWS::IAM::Policy
+    Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: !Sub "${Environment}-rds-proxy-secrets"
-
-      Roles:
-        - !Ref RDSProxyRole
-
+      ManagedPolicyName: !Sub "${Environment}-rds-proxy-secrets"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -50,13 +48,14 @@ Resources:
             Effect: Allow
             Action:
               - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
             Resource:
               - !Ref DatabaseSecretArn
 
   RDSProxy:
     Type: AWS::RDS::DBProxy
     DependsOn:
-      - RDSProxySecretsPolicy
+      - RDSProxyRole
 
     Properties:
       DBProxyName: !Sub "${Environment}-postgres-proxy"
