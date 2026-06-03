@@ -15,6 +15,7 @@ env:
   AWS_ACCOUNT_ID: 591446361969
   TEMPLATE_BUCKET_NAME: raashed-cf-templates-ap-south-1
   ENVIRONMENT: prod
+  ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
 
 jobs:
   deploy:
@@ -101,3 +102,15 @@ jobs:
             --parameter-overrides \
               TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
               Environment="${ENVIRONMENT}"
+
+      - name: Deploy shared monitoring
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-monitoring \
+            --template-file shared/monitoring/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              AlertEmail="${ALERT_EMAIL:-}"

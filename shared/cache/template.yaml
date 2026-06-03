@@ -39,6 +39,12 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-CachePort"
 
+  CacheClusterId:
+    Description: Redis cache cluster identifier
+    Value: !GetAtt ElastiCacheStack.Outputs.CacheClusterId
+    Export:
+      Name: !Sub "${AWS::StackName}-CacheClusterId"
+
   CacheSecurityGroupId:
     Description: Cache security group ID
     Value: !GetAtt ElastiCacheStack.Outputs.CacheSecurityGroupId

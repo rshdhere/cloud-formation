@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared monitoring infrastructure
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address for alert notifications
+
+Resources:
+  CloudWatchStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/monitoring/cloudwatch.yaml"
+
+      Parameters:
+        AlertEmail: !Ref AlertEmail
+        DatabaseInstanceIdentifier: !ImportValue shared-database-DatabaseInstanceIdentifier
+        CacheClusterId: !ImportValue shared-cache-CacheClusterId
+
+Outputs:
+  DashboardName:
+    Description: CloudWatch dashboard name
+    Value: !GetAtt CloudWatchStack.Outputs.DashboardName
+    Export:
+      Name: !Sub "${AWS::StackName}-DashboardName"
+
+  AlertsTopicArn:
+    Description: SNS topic ARN for alerts
+    Value: !GetAtt CloudWatchStack.Outputs.AlertsTopicArn
+    Export:
+      Name: !Sub "${AWS::StackName}-AlertsTopicArn"

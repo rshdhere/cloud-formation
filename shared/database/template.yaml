@@ -59,6 +59,8 @@ Outputs:
   DatabaseInstanceIdentifier:
     Description: Database instance identifier
     Value: !GetAtt PostgreSQLStack.Outputs.DatabaseInstanceIdentifier
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseInstanceIdentifier"
 
   ProxyName:
     Description: RDS Proxy name

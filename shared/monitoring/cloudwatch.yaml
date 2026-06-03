@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared monitoring and alerting resources
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address for alert notifications
+
+  DatabaseInstanceIdentifier:
+    Type: String
+    Description: RDS database instance identifier
+
+  CacheClusterId:
+    Type: String
+    Description: ElastiCache cluster identifier
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: shared-alerts
+
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !Ref AlertEmail
+
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: shared-platform
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 3,
+              "properties": {
+                "markdown": "# Shared platform monitoring\n\nRDS and Redis health at a glance."
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 3,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "RDS PostgreSQL",
+                "region": "${AWS::Region}",
+                "stat": "Average",
+                "period": 300,
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DatabaseInstanceIdentifier}", { "label": "CPUUtilization" } ],
+                  [ ".", "FreeStorageSpace", ".", ".", { "stat": "Minimum", "label": "FreeStorageSpace" } ],
+                  [ ".", "DatabaseConnections", ".", ".", { "label": "DatabaseConnections" } ]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 3,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Redis Cache",
+                "region": "${AWS::Region}",
+                "stat": "Average",
+                "period": 300,
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  [ "AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${CacheClusterId}", { "label": "CPUUtilization" } ],
+                  [ ".", "DatabaseMemoryUsagePercentage", ".", ".", { "label": "DatabaseMemoryUsagePercentage" } ],
+                  [ ".", "Evictions", ".", ".", { "stat": "Sum", "label": "Evictions" } ]
+                ]
+              }
+            }
+          ]
+        }
+
+  RDSCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-rds-cpu-high
+      AlarmDescription: RDS CPU utilization is above 80 percent for 15 minutes
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DatabaseInstanceIdentifier
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  RDSFreeStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-rds-free-storage-low
+      AlarmDescription: RDS free storage is below 20 GB for 15 minutes
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DatabaseInstanceIdentifier
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 21474836480
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  RDSDatabaseConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-rds-connections-high
+      AlarmDescription: RDS database connections are above the expected threshold
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DatabaseInstanceIdentifier
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  RedisCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-redis-cpu-high
+      AlarmDescription: Redis CPU utilization is above 80 percent for 15 minutes
+      Namespace: AWS/ElastiCache
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Ref CacheClusterId
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  RedisMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-redis-memory-high
+      AlarmDescription: Redis memory usage is above 85 percent for 15 minutes
+      Namespace: AWS/ElastiCache
+      MetricName: DatabaseMemoryUsagePercentage
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Ref CacheClusterId
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  RedisEvictionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: shared-redis-evictions-nonzero
+      AlarmDescription: Redis has started evicting keys
+      Namespace: AWS/ElastiCache
+      MetricName: Evictions
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Ref CacheClusterId
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+Outputs:
+  DashboardName:
+    Description: CloudWatch dashboard name
+    Value: !Ref MonitoringDashboard
+
+  AlertsTopicArn:
+    Description: SNS topic ARN for alerts
+    Value: !Ref AlertsTopic

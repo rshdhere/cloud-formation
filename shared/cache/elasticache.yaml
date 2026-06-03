@@ -71,6 +71,10 @@ Outputs:
     Description: Redis cache port
     Value: !GetAtt RedisCache.RedisEndpoint.Port
 
+  CacheClusterId:
+    Description: Redis cache cluster identifier
+    Value: !Ref RedisCache
+
   CacheSecurityGroupId:
     Description: Cache security group ID
     Value: !Ref CacheSecurityGroup
