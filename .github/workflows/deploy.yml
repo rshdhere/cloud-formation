@@ -16,6 +16,7 @@ env:
   TEMPLATE_BUCKET_NAME: raashed-cf-templates-ap-south-1
   ENVIRONMENT: prod
   ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+  HAS_BOOTSTRAP_CREDS: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID != '' && secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY != '' }}
 
 jobs:
   deploy:
@@ -29,7 +30,7 @@ jobs:
         env:
           AWS_BOOTSTRAP_ACCESS_KEY_ID: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
           AWS_BOOTSTRAP_SECRET_ACCESS_KEY: ${{ secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY }}
-        if: ${{ env.AWS_BOOTSTRAP_ACCESS_KEY_ID != '' && env.AWS_BOOTSTRAP_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
@@ -38,10 +39,7 @@ jobs:
           role-session-name: GitHubActionsBootstrap
 
       - name: Configure AWS credentials
-        env:
-          AWS_BOOTSTRAP_ACCESS_KEY_ID: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
-          AWS_BOOTSTRAP_SECRET_ACCESS_KEY: ${{ secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY }}
-        if: ${{ env.AWS_BOOTSTRAP_ACCESS_KEY_ID == '' || env.AWS_BOOTSTRAP_SECRET_ACCESS_KEY == '' }}
+        if: ${{ env.HAS_BOOTSTRAP_CREDS != 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
@@ -78,6 +76,43 @@ jobs:
               GitHubOwner=rshdhere \
               GitHubRepository=cloud-formation \
               GitHubBranch=main
+
+      - name: Reconfigure AWS credentials via OIDC
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsCloudFormation
+
+      - name: Reset shared monitoring stack if it is stuck
+        run: |
+          set -euo pipefail
+
+          if aws cloudformation describe-stacks \
+            --stack-name shared-monitoring \
+            --region "${AWS_REGION}" \
+            >/dev/null 2>&1; then
+            stack_status="$(
+              aws cloudformation describe-stacks \
+                --stack-name shared-monitoring \
+                --region "${AWS_REGION}" \
+                --query 'Stacks[0].StackStatus' \
+                --output text
+            )"
+
+            case "${stack_status}" in
+              ROLLBACK_FAILED|ROLLBACK_COMPLETE|DELETE_FAILED|UPDATE_ROLLBACK_FAILED)
+                aws cloudformation delete-stack \
+                  --stack-name shared-monitoring \
+                  --region "${AWS_REGION}"
+
+                aws cloudformation wait stack-delete-complete \
+                  --stack-name shared-monitoring \
+                  --region "${AWS_REGION}"
+                ;;
+            esac
+          fi
 
       - name: Deploy shared cache
         run: |
