@@ -1,0 +1,87 @@
+name: Deploy CloudFormation
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: 591446361969
+  TEMPLATE_BUCKET_NAME: raashed-cf-templates-ap-south-1
+  ENVIRONMENT: prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsCloudFormation
+
+      - name: Sync templates to S3
+        run: |
+          aws s3 sync shared "s3://${TEMPLATE_BUCKET_NAME}/shared" \
+            --exclude "*" \
+            --include "*.yaml" \
+            --delete
+
+      - name: Deploy shared networking
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-networking \
+            --template-file shared/networking/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides TemplateBucketName="${TEMPLATE_BUCKET_NAME}"
+
+      - name: Deploy shared security
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-security \
+            --template-file shared/security/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              GitHubOwner=rshdhere \
+              GitHubRepository=cloud-formation \
+              GitHubBranch=main
+
+      - name: Deploy shared cache
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-cache \
+            --template-file shared/cache/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              Environment="${ENVIRONMENT}"
+
+      - name: Deploy shared database
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-database \
+            --template-file shared/database/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              Environment="${ENVIRONMENT}"

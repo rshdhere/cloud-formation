@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Shared cache infrastructure
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  ElastiCacheStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/cache/elasticache.yaml"
+
+      Parameters:
+        Environment: !Ref Environment
+        PrivateSubnet01Id: !ImportValue shared-networking-PrivateSubnet01Id
+        PrivateSubnet02Id: !ImportValue shared-networking-PrivateSubnet02Id
+        AppSecurityGroupId: !ImportValue shared-security-AppSecurityGroupId
+
+Outputs:
+  CacheEndpoint:
+    Description: Redis cache endpoint
+    Value: !GetAtt ElastiCacheStack.Outputs.CacheEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-CacheEndpoint"
+
+  CachePort:
+    Description: Redis cache port
+    Value: !GetAtt ElastiCacheStack.Outputs.CachePort
+    Export:
+      Name: !Sub "${AWS::StackName}-CachePort"
+
+  CacheSecurityGroupId:
+    Description: Cache security group ID
+    Value: !GetAtt ElastiCacheStack.Outputs.CacheSecurityGroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-CacheSecurityGroupId"
+
+  CacheSubnetGroupName:
+    Description: Cache subnet group name
+    Value: !GetAtt ElastiCacheStack.Outputs.CacheSubnetGroupName
+    Export:
+      Name: !Sub "${AWS::StackName}-CacheSubnetGroupName"

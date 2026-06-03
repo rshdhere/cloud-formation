@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Redis cache for shared services
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  PrivateSubnet01Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet02Id:
+    Type: AWS::EC2::Subnet::Id
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  CacheNodeType:
+    Type: String
+    Default: cache.t3.micro
+
+Resources:
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Redis cache subnet group
+      SubnetIds:
+        - !Ref PrivateSubnet01Id
+        - !Ref PrivateSubnet02Id
+
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow application traffic to Redis cache
+      VpcId: !ImportValue shared-networking-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-cache-sg"
+
+  RedisCache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Sub "${Environment}-redis-cache"
+      CacheNodeType: !Ref CacheNodeType
+      Engine: redis
+      NumCacheNodes: 1
+      Port: 6379
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      AutoMinorVersionUpgrade: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-redis-cache"
+
+Outputs:
+  CacheEndpoint:
+    Description: Redis cache endpoint
+    Value: !GetAtt RedisCache.RedisEndpoint.Address
+
+  CachePort:
+    Description: Redis cache port
+    Value: !GetAtt RedisCache.RedisEndpoint.Port
+
+  CacheSecurityGroupId:
+    Description: Cache security group ID
+    Value: !Ref CacheSecurityGroup
+
+  CacheSubnetGroupName:
+    Description: Cache subnet group name
+    Value: !Ref CacheSubnetGroup

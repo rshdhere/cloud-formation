@@ -6,6 +6,21 @@ Parameters:
     Type: String
     Description: S3 bucket containing nested CloudFormation templates
 
+  GitHubOwner:
+    Type: String
+    Default: rshdhere
+    Description: GitHub organization or user that owns this repository
+
+  GitHubRepository:
+    Type: String
+    Default: cloud-formation
+    Description: GitHub repository name allowed to assume the deployment role
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Git branch allowed to assume the deployment role
+
 Resources:
   SecurityGroupsStack:
     Type: AWS::CloudFormation::Stack
@@ -14,6 +29,16 @@ Resources:
 
       Parameters:
         VpcId: !ImportValue shared-networking-VpcId
+
+  GitHubOIDCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/security/github-oidc.yaml"
+
+      Parameters:
+        GitHubOwner: !Ref GitHubOwner
+        GitHubRepository: !Ref GitHubRepository
+        GitHubBranch: !Ref GitHubBranch
 
 Outputs:
   AlbSecurityGroupId:
@@ -39,3 +64,15 @@ Outputs:
     Value: !GetAtt SecurityGroupsStack.Outputs.DatabaseSecurityGroupId
     Export:
       Name: shared-security-DatabaseSecurityGroupId
+
+  GitHubOIDCProviderArn:
+    Description: GitHub OIDC provider ARN
+    Value: !GetAtt GitHubOIDCStack.Outputs.GitHubOIDCProviderArn
+    Export:
+      Name: shared-security-GitHubOIDCProviderArn
+
+  GithubActionsCloudFormationRoleArn:
+    Description: GitHub Actions CloudFormation deployment role ARN
+    Value: !GetAtt GitHubOIDCStack.Outputs.GithubActionsCloudFormationRoleArn
+    Export:
+      Name: shared-security-GithubActionsCloudFormationRoleArn

@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: GitHub Actions OIDC provider and CloudFormation deployment role
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Description: GitHub organization or user that owns this repository
+
+  GitHubRepository:
+    Type: String
+    Description: GitHub repository name allowed to assume the deployment role
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Git branch allowed to assume the deployment role
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  GithubActionsCloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GithubActionsCloudFormationRole
+      Description: Allow GitHub Actions to upload templates to S3 and deploy CloudFormation stacks
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOIDCProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+Outputs:
+  GitHubOIDCProviderArn:
+    Description: GitHub OIDC provider ARN
+    Value: !Ref GitHubOIDCProvider
+
+  GithubActionsCloudFormationRoleArn:
+    Description: GitHub Actions CloudFormation deployment role ARN
+    Value: !GetAtt GithubActionsCloudFormationRole.Arn
+
+  GithubActionsCloudFormationRoleName:
+    Description: GitHub Actions CloudFormation deployment role name
+    Value: !Ref GithubActionsCloudFormationRole
