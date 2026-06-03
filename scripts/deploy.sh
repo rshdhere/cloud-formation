@@ -49,12 +49,19 @@ deploy_stack() {
   local template_file="$2"
   shift 2
 
+  local capabilities=()
+  if [[ "${1:-}" == "--capabilities" ]]; then
+    capabilities=(--capabilities "$2")
+    shift 2
+  fi
+
   echo "Deploying ${stack_name}"
   aws cloudformation deploy \
     --stack-name "${stack_name}" \
     --template-file "${template_file}" \
     --region "${AWS_REGION}" \
     --no-fail-on-empty-changeset \
+    "${capabilities[@]}" \
     --parameter-overrides "$@"
 }
 
@@ -68,6 +75,7 @@ main() {
     TemplateBucketName="${TEMPLATE_BUCKET_NAME}"
 
   deploy_stack "${SECURITY_STACK_NAME}" "${ROOT_DIR}/shared/security/template.yaml" \
+    --capabilities CAPABILITY_NAMED_IAM \
     TemplateBucketName="${TEMPLATE_BUCKET_NAME}"
 
   deploy_stack "${CACHE_STACK_NAME}" "${ROOT_DIR}/shared/cache/template.yaml" \

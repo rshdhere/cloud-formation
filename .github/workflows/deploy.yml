@@ -24,7 +24,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Configure bootstrap AWS credentials
+        if: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID != '' && secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsBootstrap
+
       - name: Configure AWS credentials
+        if: ${{ !(secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID != '' && secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY != '') }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
