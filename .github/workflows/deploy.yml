@@ -53,6 +53,11 @@ jobs:
             --include "*.yaml" \
             --delete
 
+          aws s3 sync projects/video-transcoding "s3://${TEMPLATE_BUCKET_NAME}/projects/video-transcoding" \
+            --exclude "*" \
+            --include "*.yaml" \
+            --delete
+
       - name: Deploy shared networking
         run: |
           aws cloudformation deploy \
@@ -149,3 +154,18 @@ jobs:
             --parameter-overrides \
               TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
               AlertEmail="${ALERT_EMAIL:-}"
+
+      - name: Deploy video-transcoding
+        run: |
+          aws cloudformation deploy \
+            --stack-name video-transcoding \
+            --template-file projects/video-transcoding/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              Environment="${ENVIRONMENT}" \
+              UploadsBucketName=vtp-uploads \
+              TranscodedBucketName=vtp-transcoded \
+              TranscodingQueueName=vtp-transcoding \
+              EmailVerificationQueueName=vtp-email-verification

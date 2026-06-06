@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Video transcoding platform infrastructure
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  UploadsBucketName:
+    Type: String
+    Default: vtp-uploads
+
+  TranscodedBucketName:
+    Type: String
+    Default: vtp-transcoded
+
+  TranscodingQueueName:
+    Type: String
+    Default: vtp-transcoding
+
+  EmailVerificationQueueName:
+    Type: String
+    Default: vtp-email-verification
+
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref UploadsBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Ref UploadsBucketName
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-uploads
+
+  TranscodedBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref TranscodedBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Ref TranscodedBucketName
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-transcoded
+
+  QueuesStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/SQS.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        TranscodingQueueName: !Ref TranscodingQueueName
+        EmailVerificationQueueName: !Ref EmailVerificationQueueName
+
+Outputs:
+  UploadsBucketName:
+    Description: Raw video uploads bucket name
+    Value: !Ref UploadsBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-UploadsBucketName"
+
+  UploadsBucketArn:
+    Description: Raw video uploads bucket ARN
+    Value: !GetAtt UploadsBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UploadsBucketArn"
+
+  TranscodedBucketName:
+    Description: Transcoded video outputs bucket name
+    Value: !Ref TranscodedBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodedBucketName"
+
+  TranscodedBucketArn:
+    Description: Transcoded video outputs bucket ARN
+    Value: !GetAtt TranscodedBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodedBucketArn"
+
+  SqsTranscodingQueueUrl:
+    Description: SQS_TRANSCODING_QUEUE_URL
+    Value: !GetAtt QueuesStack.Outputs.SqsTranscodingQueueUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-SqsTranscodingQueueUrl"
+
+  SqsEmailVerificationQueueUrl:
+    Description: SQS_EMAIL_VERIFICATION_QUEUE_URL
+    Value: !GetAtt QueuesStack.Outputs.SqsEmailVerificationQueueUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-SqsEmailVerificationQueueUrl"
+
+  TranscodingQueueArn:
+    Description: ARN for the video transcoding queue
+    Value: !GetAtt QueuesStack.Outputs.TranscodingQueueArn
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodingQueueArn"
+
+  EmailVerificationQueueArn:
+    Description: ARN for the email verification queue
+    Value: !GetAtt QueuesStack.Outputs.EmailVerificationQueueArn
+    Export:
+      Name: !Sub "${AWS::StackName}-EmailVerificationQueueArn"

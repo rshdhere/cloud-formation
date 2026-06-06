@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS queues for video transcoding and email verification
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  TranscodingQueueName:
+    Type: String
+    Default: vtp-transcoding
+
+  EmailVerificationQueueName:
+    Type: String
+    Default: vtp-email-verification
+
+Resources:
+  TranscodingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref TranscodingQueueName
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600
+      ReceiveMessageWaitTimeSeconds: 20
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Ref TranscodingQueueName
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-transcoding
+
+  EmailVerificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref EmailVerificationQueueName
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 1209600
+      ReceiveMessageWaitTimeSeconds: 20
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Ref EmailVerificationQueueName
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: email-verification
+
+Outputs:
+  SqsTranscodingQueueUrl:
+    Description: SQS_TRANSCODING_QUEUE_URL
+    Value: !Ref TranscodingQueue
+
+  SqsEmailVerificationQueueUrl:
+    Description: SQS_EMAIL_VERIFICATION_QUEUE_URL
+    Value: !Ref EmailVerificationQueue
+
+  TranscodingQueueArn:
+    Description: ARN for the video transcoding queue
+    Value: !GetAtt TranscodingQueue.Arn
+
+  EmailVerificationQueueArn:
+    Description: ARN for the email verification queue
+    Value: !GetAtt EmailVerificationQueue.Arn
