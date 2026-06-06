@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Video transcoding platform (VTP) infrastructure
+
+Parameters:
+  TemplateBucketName:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  UploadsBucketName:
+    Type: String
+    Default: vtp-uploads
+
+  TranscodedBucketName:
+    Type: String
+    Default: vtp-transcoded
+
+Resources:
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/vtp/storage/s3.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        UploadsBucketName: !Ref UploadsBucketName
+        TranscodedBucketName: !Ref TranscodedBucketName
+
+Outputs:
+  UploadsBucketName:
+    Description: Raw video uploads bucket name
+    Value: !GetAtt StorageStack.Outputs.UploadsBucketName
+    Export:
+      Name: !Sub "${AWS::StackName}-UploadsBucketName"
+
+  UploadsBucketArn:
+    Description: Raw video uploads bucket ARN
+    Value: !GetAtt StorageStack.Outputs.UploadsBucketArn
+    Export:
+      Name: !Sub "${AWS::StackName}-UploadsBucketArn"
+
+  TranscodedBucketName:
+    Description: Transcoded video outputs bucket name
+    Value: !GetAtt StorageStack.Outputs.TranscodedBucketName
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodedBucketName"
+
+  TranscodedBucketArn:
+    Description: Transcoded video outputs bucket ARN
+    Value: !GetAtt StorageStack.Outputs.TranscodedBucketArn
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodedBucketArn"

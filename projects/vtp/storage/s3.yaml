@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: S3 buckets for VTP video uploads and transcoded outputs
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  UploadsBucketName:
+    Type: String
+    Default: vtp-uploads
+    Description: Bucket for raw video uploads
+
+  TranscodedBucketName:
+    Type: String
+    Default: vtp-transcoded
+    Description: Bucket for transcoded video outputs
+
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref UploadsBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Ref UploadsBucketName
+        - Key: Project
+          Value: vtp
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-uploads
+
+  TranscodedBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref TranscodedBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Ref TranscodedBucketName
+        - Key: Project
+          Value: vtp
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-transcoded
+
+Outputs:
+  UploadsBucketName:
+    Description: Raw video uploads bucket name
+    Value: !Ref UploadsBucket
+
+  UploadsBucketArn:
+    Description: Raw video uploads bucket ARN
+    Value: !GetAtt UploadsBucket.Arn
+
+  TranscodedBucketName:
+    Description: Transcoded video outputs bucket name
+    Value: !Ref TranscodedBucket
+
+  TranscodedBucketArn:
+    Description: Transcoded video outputs bucket ARN
+    Value: !GetAtt TranscodedBucket.Arn
