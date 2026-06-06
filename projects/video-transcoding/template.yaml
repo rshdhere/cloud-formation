@@ -22,6 +22,11 @@ Parameters:
     Type: String
     Default: vtp-transcoded
 
+  CorsAllowedOrigins:
+    Type: CommaDelimitedList
+    Default: "*"
+    Description: Origins allowed for browser-based uploads and playback
+
   TranscodingQueueName:
     Type: String
     Default: vtp-transcoding
@@ -31,59 +36,19 @@ Parameters:
     Default: vtp-email-verification
 
 Resources:
-  UploadsBucket:
-    Type: AWS::S3::Bucket
+  S3Stack:
+    Type: AWS::CloudFormation::Stack
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Ref UploadsBucketName
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
-      Tags:
-        - Key: Name
-          Value: !Ref UploadsBucketName
-        - Key: Project
-          Value: video-transcoding
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Purpose
-          Value: video-uploads
-
-  TranscodedBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BucketName: !Ref TranscodedBucketName
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
-      Tags:
-        - Key: Name
-          Value: !Ref TranscodedBucketName
-        - Key: Project
-          Value: video-transcoding
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Purpose
-          Value: video-transcoded
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/S3.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        UploadsBucketName: !Ref UploadsBucketName
+        TranscodedBucketName: !Ref TranscodedBucketName
+        CorsAllowedOrigins: !Join
+          - ","
+          - !Ref CorsAllowedOrigins
 
   QueuesStack:
     Type: AWS::CloudFormation::Stack
@@ -97,25 +62,25 @@ Resources:
 Outputs:
   UploadsBucketName:
     Description: Raw video uploads bucket name
-    Value: !Ref UploadsBucket
+    Value: !GetAtt S3Stack.Outputs.UploadsBucketName
     Export:
       Name: !Sub "${AWS::StackName}-UploadsBucketName"
 
   UploadsBucketArn:
     Description: Raw video uploads bucket ARN
-    Value: !GetAtt UploadsBucket.Arn
+    Value: !GetAtt S3Stack.Outputs.UploadsBucketArn
     Export:
       Name: !Sub "${AWS::StackName}-UploadsBucketArn"
 
   TranscodedBucketName:
     Description: Transcoded video outputs bucket name
-    Value: !Ref TranscodedBucket
+    Value: !GetAtt S3Stack.Outputs.TranscodedBucketName
     Export:
       Name: !Sub "${AWS::StackName}-TranscodedBucketName"
 
   TranscodedBucketArn:
     Description: Transcoded video outputs bucket ARN
-    Value: !GetAtt TranscodedBucket.Arn
+    Value: !GetAtt S3Stack.Outputs.TranscodedBucketArn
     Export:
       Name: !Sub "${AWS::StackName}-TranscodedBucketArn"
 

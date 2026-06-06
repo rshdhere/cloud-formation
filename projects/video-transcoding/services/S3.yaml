@@ -20,6 +20,11 @@ Parameters:
     Default: vtp-transcoded
     Description: Bucket for transcoded video outputs
 
+  CorsAllowedOrigins:
+    Type: CommaDelimitedList
+    Default: "*"
+    Description: Origins allowed for browser-based uploads and playback
+
 Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
@@ -38,6 +43,29 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - HEAD
+            AllowedOrigins: !Ref CorsAllowedOrigins
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: ExpireNoncurrentUploadVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
       Tags:
         - Key: Name
           Value: !Ref UploadsBucketName
@@ -65,6 +93,25 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins: !Ref CorsAllowedOrigins
+            ExposedHeaders:
+              - ETag
+              - Content-Length
+              - Content-Type
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireNoncurrentTranscodedVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
       Tags:
         - Key: Name
           Value: !Ref TranscodedBucketName
