@@ -18,15 +18,39 @@ Parameters:
     Type: String
     Default: vtp-email-verification
 
+  TranscodingVisibilityTimeoutSeconds:
+    Type: Number
+    Default: 1800
+    Description: Visibility timeout for long-running ffmpeg transcodes (15-30 minutes)
+
 Resources:
+  TranscodingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${TranscodingQueueName}-dlq"
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${TranscodingQueueName}-dlq"
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: video-transcoding-dlq
+
   TranscodingQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Ref TranscodingQueueName
-      VisibilityTimeout: 300
+      VisibilityTimeout: !Ref TranscodingVisibilityTimeoutSeconds
       MessageRetentionPeriod: 1209600
       ReceiveMessageWaitTimeSeconds: 20
       SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TranscodingDeadLetterQueue.Arn
+        maxReceiveCount: 3
       Tags:
         - Key: Name
           Value: !Ref TranscodingQueueName
@@ -37,6 +61,22 @@ Resources:
         - Key: Purpose
           Value: video-transcoding
 
+  EmailVerificationDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${EmailVerificationQueueName}-dlq"
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EmailVerificationQueueName}-dlq"
+        - Key: Project
+          Value: video-transcoding
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: email-verification-dlq
+
   EmailVerificationQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -45,6 +85,9 @@ Resources:
       MessageRetentionPeriod: 1209600
       ReceiveMessageWaitTimeSeconds: 20
       SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EmailVerificationDeadLetterQueue.Arn
+        maxReceiveCount: 5
       Tags:
         - Key: Name
           Value: !Ref EmailVerificationQueueName
@@ -71,3 +114,27 @@ Outputs:
   EmailVerificationQueueArn:
     Description: ARN for the email verification queue
     Value: !GetAtt EmailVerificationQueue.Arn
+
+  TranscodingDeadLetterQueueArn:
+    Description: ARN for the video transcoding dead-letter queue
+    Value: !GetAtt TranscodingDeadLetterQueue.Arn
+
+  TranscodingDeadLetterQueueUrl:
+    Description: URL for the video transcoding dead-letter queue
+    Value: !Ref TranscodingDeadLetterQueue
+
+  TranscodingDeadLetterQueueName:
+    Description: Name of the video transcoding dead-letter queue
+    Value: !GetAtt TranscodingDeadLetterQueue.QueueName
+
+  EmailVerificationDeadLetterQueueArn:
+    Description: ARN for the email verification dead-letter queue
+    Value: !GetAtt EmailVerificationDeadLetterQueue.Arn
+
+  EmailVerificationDeadLetterQueueUrl:
+    Description: URL for the email verification dead-letter queue
+    Value: !Ref EmailVerificationDeadLetterQueue
+
+  EmailVerificationDeadLetterQueueName:
+    Description: Name of the email verification dead-letter queue
+    Value: !GetAtt EmailVerificationDeadLetterQueue.QueueName

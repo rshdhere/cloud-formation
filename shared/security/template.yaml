@@ -21,6 +21,11 @@ Parameters:
     Default: main
     Description: Git branch allowed to assume the deployment role
 
+  DeployUserName:
+    Type: String
+    Default: transcoding-infra
+    Description: IAM user that runs local aws cloudformation deploy
+
 Resources:
   SecurityGroupsStack:
     Type: AWS::CloudFormation::Stack
@@ -39,6 +44,13 @@ Resources:
         GitHubOwner: !Ref GitHubOwner
         GitHubRepository: !Ref GitHubRepository
         GitHubBranch: !Ref GitHubBranch
+
+  DeployUserIamStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/security/deploy-user-iam.yaml"
+      Parameters:
+        DeployUserName: !Ref DeployUserName
 
 Outputs:
   AlbSecurityGroupId:
@@ -76,3 +88,7 @@ Outputs:
     Value: !GetAtt GitHubOIDCStack.Outputs.GithubActionsCloudFormationRoleArn
     Export:
       Name: shared-security-GithubActionsCloudFormationRoleArn
+
+  VtpDeployUserPolicyName:
+    Description: Inline IAM policy name granting vtp-* role management to the deploy user
+    Value: !GetAtt DeployUserIamStack.Outputs.DeployUserPolicyName

@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Application Load Balancer for VTP API and web services
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  DomainName:
+    Type: String
+    Default: example.com
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  PublicSubnet01Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PublicSubnet02Id:
+    Type: AWS::EC2::Subnet::Id
+
+  AlbSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  AlbCertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN for HTTPS (optional until Route 53 validation)
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref AlbCertificateArn, ""]]
+
+Resources:
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "vtp-${Environment}-alb"
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PublicSubnet01Id
+        - !Ref PublicSubnet02Id
+      SecurityGroups:
+        - !Ref AlbSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-alb"
+        - Key: Project
+          Value: video-transcoding
+
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "vtp-${Environment}-api-tg"
+      Port: 3001
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-api-tg"
+        - Key: Project
+          Value: video-transcoding
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "vtp-${Environment}-web-tg"
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200-399"
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-web-tg"
+        - Key: Project
+          Value: video-transcoding
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: Not Found
+
+  HttpApiHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Sub "api.${DomainName}"
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  HttpWebHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 20
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Sub "app.${DomainName}"
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref AlbCertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: Not Found
+
+  HttpsApiHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasCertificate
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Sub "api.${DomainName}"
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  HttpsWebHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasCertificate
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 20
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Sub "app.${DomainName}"
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+Outputs:
+  AlbArn:
+    Description: Application Load Balancer ARN
+    Value: !Ref ApplicationLoadBalancer
+
+  AlbDnsName:
+    Description: Application Load Balancer DNS name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  AlbHostedZoneId:
+    Description: Route 53 hosted zone ID for ALB alias records
+    Value: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+
+  ApiTargetGroupArn:
+    Description: API target group ARN
+    Value: !Ref ApiTargetGroup
+
+  WebTargetGroupArn:
+    Description: Web target group ARN
+    Value: !Ref WebTargetGroup
+
+  HttpListenerArn:
+    Description: HTTP listener ARN for API Gateway integration
+    Value: !Ref HttpListener
+
+  HttpsListenerArn:
+    Description: HTTPS listener ARN (empty when no certificate)
+    Condition: HasCertificate
+    Value: !Ref HttpsListener
+
+  AlbIntegrationListenerArn:
+    Description: Listener ARN used by API Gateway (HTTPS preferred, else HTTP)
+    Value: !If
+      - HasCertificate
+      - !Ref HttpsListener
+      - !Ref HttpListener

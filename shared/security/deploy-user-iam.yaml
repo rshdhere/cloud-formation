@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM permissions for the CLI deploy user to manage VTP task roles via CloudFormation
+
+Parameters:
+  DeployUserName:
+    Type: String
+    Default: transcoding-infra
+    Description: IAM user that runs aws cloudformation deploy locally
+
+Resources:
+  VtpDeployUserIamPolicy:
+    Type: AWS::IAM::UserPolicy
+    Properties:
+      UserName: !Ref DeployUserName
+      PolicyName: vtp-cloudformation-iam
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ManageVtpRoles
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:UpdateAssumeRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:ListRolePolicies
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:ListAttachedRolePolicies
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:PassRole
+            Resource:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/vtp-*"
+          - Sid: ManageVtpManagedPolicies
+            Effect: Allow
+            Action:
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:GetPolicy
+              - iam:GetPolicyVersion
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:ListPolicyVersions
+              - iam:TagPolicy
+              - iam:UntagPolicy
+            Resource:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:policy/vtp-*"
+          - Sid: PassEcsServiceLinkedRole
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+            Condition:
+              StringEquals:
+                iam:PassedToService: application-autoscaling.amazonaws.com
+
+Outputs:
+  DeployUserName:
+    Description: IAM user receiving VTP deploy permissions
+    Value: !Ref DeployUserName
+
+  DeployUserPolicyName:
+    Description: Inline policy name attached to the deploy user
+    Value: vtp-cloudformation-iam

@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SSM parameters for cross-stack wiring of VTP resources
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  UploadsBucketName:
+    Type: String
+
+  TranscodedBucketName:
+    Type: String
+
+  SqsTranscodingQueueUrl:
+    Type: String
+
+  SqsEmailVerificationQueueUrl:
+    Type: String
+
+  RdsProxyEndpoint:
+    Type: String
+
+  EcrApiRepositoryUri:
+    Type: String
+
+  EcrWorkerRepositoryUri:
+    Type: String
+
+  EcrWebRepositoryUri:
+    Type: String
+
+  BetterAuthSecretArn:
+    Type: String
+
+  ResendApiKeySecretArn:
+    Type: String
+
+  DatabaseUrlSecretArn:
+    Type: String
+
+  DomainName:
+    Type: String
+    Default: example.com
+
+  AlbDnsName:
+    Type: String
+    Default: pending
+
+  ApiGatewayEndpoint:
+    Type: String
+    Default: pending
+
+  CloudFrontDistributionId:
+    Type: String
+    Default: pending
+
+Resources:
+  S3UploadBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/s3/upload-bucket"
+      Type: String
+      Value: !Ref UploadsBucketName
+      Description: S3_UPLOAD_BUCKET for ECS tasks
+
+  S3TranscodedBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/s3/transcoded-bucket"
+      Type: String
+      Value: !Ref TranscodedBucketName
+      Description: S3_TRANSCODED_BUCKET for ECS tasks
+
+  SqsTranscodingQueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/sqs/transcoding-queue-url"
+      Type: String
+      Value: !Ref SqsTranscodingQueueUrl
+      Description: SQS_TRANSCODING_QUEUE_URL for ECS tasks
+
+  SqsEmailVerificationQueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/sqs/email-verification-queue-url"
+      Type: String
+      Value: !Ref SqsEmailVerificationQueueUrl
+      Description: SQS_EMAIL_VERIFICATION_QUEUE_URL for ECS tasks
+
+  RdsProxyEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/rds/proxy-endpoint"
+      Type: String
+      Value: !Ref RdsProxyEndpoint
+      Description: RDS Proxy endpoint for DATABASE_URL assembly
+
+  EcrApiRepositoryUriParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/ecr/api-repository-uri"
+      Type: String
+      Value: !Ref EcrApiRepositoryUri
+      Description: ECR URI for vtp-api container image
+
+  EcrWorkerRepositoryUriParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/ecr/worker-repository-uri"
+      Type: String
+      Value: !Ref EcrWorkerRepositoryUri
+      Description: ECR URI for vtp-worker container image
+
+  EcrWebRepositoryUriParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/ecr/web-repository-uri"
+      Type: String
+      Value: !Ref EcrWebRepositoryUri
+      Description: ECR URI for vtp-web container image
+
+  BetterAuthSecretArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/secrets/better-auth-secret-arn"
+      Type: String
+      Value: !Ref BetterAuthSecretArn
+      Description: Secrets Manager ARN for BETTER_AUTH_SECRET
+
+  ResendApiKeySecretArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/secrets/resend-api-key-arn"
+      Type: String
+      Value: !Ref ResendApiKeySecretArn
+      Description: Secrets Manager ARN for RESEND_API_KEY
+
+  DatabaseUrlSecretArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/secrets/database-url-arn"
+      Type: String
+      Value: !Ref DatabaseUrlSecretArn
+      Description: Secrets Manager ARN for DATABASE_URL
+
+  ApiPublicUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/urls/api-public-url"
+      Type: String
+      Value: !Sub "https://api.${DomainName}"
+      Description: Public API URL (BETTER_AUTH_URL)
+
+  WebPublicUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/urls/web-public-url"
+      Type: String
+      Value: !Sub "https://app.${DomainName}"
+      Description: Public web URL (TRUSTED_ORIGINS)
+
+  CloudFrontDomainParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/urls/cloudfront-domain"
+      Type: String
+      Value: !Sub "cdn.${DomainName}"
+      Description: CloudFront CDN domain (set after Phase 3 deploy)
+
+  AlbDnsNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/alb/dns-name"
+      Type: String
+      Value: !Ref AlbDnsName
+      Description: ALB DNS name for Route 53 alias records
+
+  ApiGatewayEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/urls/api-gateway-endpoint"
+      Type: String
+      Value: !Ref ApiGatewayEndpoint
+      Description: Public API URL (WAF-protected API Gateway or custom domain)
+
+  CloudFrontDistributionIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/cloudfront/distribution-id"
+      Type: String
+      Value: !Ref CloudFrontDistributionId
+      Description: CLOUDFRONT distribution ID for monitoring and debugging
+
+Outputs:
+  SsmParameterPrefix:
+    Description: SSM parameter prefix for VTP resources
+    Value: !Sub "/vtp/${Environment}"

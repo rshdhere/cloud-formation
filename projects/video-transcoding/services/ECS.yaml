@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate cluster, task definitions, and services for VTP
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  DomainName:
+    Type: String
+    Default: example.com
+
+  PrivateSubnet01Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet02Id:
+    Type: AWS::EC2::Subnet::Id
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  EcsTaskExecutionRoleArn:
+    Type: String
+
+  ApiTaskRoleArn:
+    Type: String
+
+  WorkerTaskRoleArn:
+    Type: String
+
+  WebTaskRoleArn:
+    Type: String
+
+  ApiTargetGroupArn:
+    Type: String
+
+  WebTargetGroupArn:
+    Type: String
+
+  EcrApiRepositoryUri:
+    Type: String
+
+  EcrWorkerRepositoryUri:
+    Type: String
+
+  EcrWebRepositoryUri:
+    Type: String
+
+  ApiImageTag:
+    Type: String
+    Default: latest
+
+  WorkerImageTag:
+    Type: String
+    Default: latest
+
+  WebImageTag:
+    Type: String
+    Default: latest
+
+  UploadsBucketName:
+    Type: String
+
+  TranscodedBucketName:
+    Type: String
+
+  SqsTranscodingQueueUrl:
+    Type: String
+
+  SqsEmailVerificationQueueUrl:
+    Type: String
+
+  DatabaseUrlSecretArn:
+    Type: String
+
+  BetterAuthSecretArn:
+    Type: String
+
+  ResendApiKeySecretArn:
+    Type: String
+
+  ResendFromEmail:
+    Type: String
+
+  TranscodingQueueName:
+    Type: String
+
+  ApiDesiredCount:
+    Type: Number
+    Default: 1
+
+  WorkerDesiredCount:
+    Type: Number
+    Default: 1
+
+  WebDesiredCount:
+    Type: Number
+    Default: 1
+
+  EnableWebService:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+  ApiCpu:
+    Type: Number
+    Default: 512
+
+  ApiMemory:
+    Type: Number
+    Default: 1024
+
+  WorkerCpu:
+    Type: Number
+    Default: 1024
+
+  WorkerMemory:
+    Type: Number
+    Default: 2048
+
+  WebCpu:
+    Type: Number
+    Default: 512
+
+  WebMemory:
+    Type: Number
+    Default: 1024
+
+  WorkerMaxCapacity:
+    Type: Number
+    Default: 10
+
+  WorkerScalingTargetMessages:
+    Type: Number
+    Default: 5
+    Description: Target SQS visible messages per worker task
+
+Conditions:
+  DeployWebService: !Equals [!Ref EnableWebService, "true"]
+
+Resources:
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/vtp-${Environment}/api"
+      RetentionInDays: 30
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/vtp-${Environment}/worker"
+      RetentionInDays: 30
+
+  WebLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: DeployWebService
+    Properties:
+      LogGroupName: !Sub "/ecs/vtp-${Environment}/web"
+      RetentionInDays: 30
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "vtp-${Environment}"
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}"
+        - Key: Project
+          Value: video-transcoding
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "vtp-${Environment}-api"
+      Cpu: !Ref ApiCpu
+      Memory: !Ref ApiMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref EcsTaskExecutionRoleArn
+      TaskRoleArn: !Ref ApiTaskRoleArn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Sub "${EcrApiRepositoryUri}:${ApiImageTag}"
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3001
+              Protocol: tcp
+          Environment:
+            - Name: BETTER_AUTH_URL
+              Value: !Sub "https://api.${DomainName}"
+            - Name: TRUSTED_ORIGINS
+              Value: !Sub "https://app.${DomainName},https://api.${DomainName}"
+            - Name: SERVER_PORT
+              Value: "3001"
+            - Name: AWS_ENABLED
+              Value: "true"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_UPLOAD_BUCKET
+              Value: !Ref UploadsBucketName
+            - Name: S3_TRANSCODED_BUCKET
+              Value: !Ref TranscodedBucketName
+            - Name: SQS_TRANSCODING_QUEUE_URL
+              Value: !Ref SqsTranscodingQueueUrl
+            - Name: SQS_EMAIL_VERIFICATION_QUEUE_URL
+              Value: !Ref SqsEmailVerificationQueueUrl
+            - Name: CLOUDFRONT_DOMAIN
+              Value: !Sub "cdn.${DomainName}"
+            - Name: TRANSCODING_RESOLUTIONS
+              Value: 480p,720p,1080p,2160p,mp3
+            - Name: MAX_DAILY_DOWNLOADS
+              Value: "10"
+            - Name: UPLOAD_COOLDOWN_SECONDS
+              Value: "30"
+            - Name: MAIL_ENABLED
+              Value: "true"
+            - Name: RESEND_FROM_EMAIL
+              Value: !Ref ResendFromEmail
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref DatabaseUrlSecretArn
+            - Name: BETTER_AUTH_SECRET
+              ValueFrom: !Sub "${BetterAuthSecretArn}:secret::"
+            - Name: RESEND_API_KEY
+              ValueFrom: !Ref ResendApiKeySecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ApiLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "vtp-${Environment}-worker"
+      Cpu: !Ref WorkerCpu
+      Memory: !Ref WorkerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref EcsTaskExecutionRoleArn
+      TaskRoleArn: !Ref WorkerTaskRoleArn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Sub "${EcrWorkerRepositoryUri}:${WorkerImageTag}"
+          Essential: true
+          Environment:
+            - Name: WORKERS_TRANSCODE_ENABLED
+              Value: "true"
+            - Name: WORKERS_EMAIL_ENABLED
+              Value: "true"
+            - Name: WORKERS_MAX_CONCURRENT_POLLS
+              Value: "3"
+            - Name: THUMBNAIL_SEEK_SECONDS
+              Value: "5"
+            - Name: TRANSCODING_RESOLUTIONS
+              Value: 480p,720p,1080p,2160p,mp3
+            - Name: FFMPEG_PATH
+              Value: ffmpeg
+            - Name: S3_UPLOAD_BUCKET
+              Value: !Ref UploadsBucketName
+            - Name: S3_TRANSCODED_BUCKET
+              Value: !Ref TranscodedBucketName
+            - Name: SQS_TRANSCODING_QUEUE_URL
+              Value: !Ref SqsTranscodingQueueUrl
+            - Name: SQS_EMAIL_VERIFICATION_QUEUE_URL
+              Value: !Ref SqsEmailVerificationQueueUrl
+            - Name: WORKERS_VERIFICATION_URL
+              Value: !Sub "https://api.${DomainName}/api/v1/auth/verify-email"
+            - Name: MAIL_ENABLED
+              Value: "true"
+            - Name: RESEND_FROM_EMAIL
+              Value: !Ref ResendFromEmail
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref DatabaseUrlSecretArn
+            - Name: RESEND_API_KEY
+              ValueFrom: !Ref ResendApiKeySecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: DeployWebService
+    Properties:
+      Family: !Sub "vtp-${Environment}-web"
+      Cpu: !Ref WebCpu
+      Memory: !Ref WebMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref EcsTaskExecutionRoleArn
+      TaskRoleArn: !Ref WebTaskRoleArn
+      ContainerDefinitions:
+        - Name: web
+          Image: !Sub "${EcrWebRepositoryUri}:${WebImageTag}"
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: API_URL
+              Value: !Sub "https://api.${DomainName}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WebLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: web
+
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ApiTaskDefinition
+    Properties:
+      ServiceName: !Sub "vtp-${Environment}-api"
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref ApiTaskDefinition
+      DesiredCount: !Ref ApiDesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: false
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref AppSecurityGroupId
+          Subnets:
+            - !Ref PrivateSubnet01Id
+            - !Ref PrivateSubnet02Id
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 3001
+          TargetGroupArn: !Ref ApiTargetGroupArn
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-api"
+        - Key: Project
+          Value: video-transcoding
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - WorkerTaskDefinition
+    Properties:
+      ServiceName: !Sub "vtp-${Environment}-worker"
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DesiredCount: !Ref WorkerDesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: false
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref AppSecurityGroupId
+          Subnets:
+            - !Ref PrivateSubnet01Id
+            - !Ref PrivateSubnet02Id
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-worker"
+        - Key: Project
+          Value: video-transcoding
+
+  WebService:
+    Type: AWS::ECS::Service
+    Condition: DeployWebService
+    DependsOn:
+      - WebTaskDefinition
+    Properties:
+      ServiceName: !Sub "vtp-${Environment}-web"
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref WebTaskDefinition
+      DesiredCount: !Ref WebDesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: false
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref AppSecurityGroupId
+          Subnets:
+            - !Ref PrivateSubnet01Id
+            - !Ref PrivateSubnet02Id
+      LoadBalancers:
+        - ContainerName: web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref WebTargetGroupArn
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-web"
+        - Key: Project
+          Value: video-transcoding
+
+  WorkerScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref WorkerMaxCapacity
+      MinCapacity: !Ref WorkerDesiredCount
+      ResourceId: !Sub
+        - "service/${ClusterName}/${ServiceName}"
+        - ClusterName: !Ref Cluster
+          ServiceName: !GetAtt WorkerService.Name
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  WorkerScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-worker-sqs-scaling"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WorkerScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref WorkerScalingTargetMessages
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+        CustomizedMetricSpecification:
+          MetricName: ApproximateNumberOfMessagesVisible
+          Namespace: AWS/SQS
+          Statistic: Average
+          Dimensions:
+            - Name: QueueName
+              Value: !Ref TranscodingQueueName
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref Cluster
+
+  ClusterArn:
+    Description: ECS cluster ARN
+    Value: !GetAtt Cluster.Arn
+
+  ApiServiceName:
+    Description: API ECS service name
+    Value: !GetAtt ApiService.Name
+
+  WorkerServiceName:
+    Description: Worker ECS service name
+    Value: !GetAtt WorkerService.Name
+
+  WebServiceName:
+    Description: Web ECS service name
+    Condition: DeployWebService
+    Value: !GetAtt WebService.Name
+
+  ApiTaskDefinitionArn:
+    Description: API task definition ARN
+    Value: !Ref ApiTaskDefinition
+
+  WorkerTaskDefinitionArn:
+    Description: Worker task definition ARN
+    Value: !Ref WorkerTaskDefinition
+
+  ApiLogGroupName:
+    Description: CloudWatch log group for API tasks
+    Value: !Ref ApiLogGroup
+
+  WorkerLogGroupName:
+    Description: CloudWatch log group for worker tasks
+    Value: !Ref WorkerLogGroup

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Video transcoding platform infrastructure
+Description: Video transcoding platform infrastructure (Phase 1-3)
 
 Parameters:
   TemplateBucketName:
@@ -14,6 +14,11 @@ Parameters:
       - staging
       - prod
 
+  DomainName:
+    Type: String
+    Default: example.com
+    Description: Root domain for api/app/cdn subdomains
+
   UploadsBucketName:
     Type: String
     Default: vtp-uploads
@@ -24,8 +29,8 @@ Parameters:
 
   CorsAllowedOrigins:
     Type: CommaDelimitedList
-    Default: "*"
-    Description: Origins allowed for browser-based uploads and playback
+    Default: "https://app.example.com"
+    Description: Origins allowed for browser-based presigned PUT uploads
 
   TranscodingQueueName:
     Type: String
@@ -34,6 +39,69 @@ Parameters:
   EmailVerificationQueueName:
     Type: String
     Default: vtp-email-verification
+
+  TranscodingVisibilityTimeoutSeconds:
+    Type: Number
+    Default: 1800
+    Description: SQS visibility timeout for long ffmpeg transcodes (seconds)
+
+  ResendFromEmail:
+    Type: String
+    Default: noreply@example.com
+    Description: Sender address for transactional email
+
+  AlbCertificateArn:
+    Type: String
+    Default: ""
+    Description: Regional ACM certificate ARN for ALB and API Gateway (api/app subdomains)
+
+  CloudFrontCertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN in us-east-1 for cdn subdomain (CloudFront requirement)
+
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: Route 53 hosted zone ID for the root domain (enables DNS records)
+
+  ApiImageTag:
+    Type: String
+    Default: latest
+
+  WorkerImageTag:
+    Type: String
+    Default: latest
+
+  WebImageTag:
+    Type: String
+    Default: latest
+
+  EnableWebService:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+  ApiDesiredCount:
+    Type: Number
+    Default: 1
+
+  WorkerDesiredCount:
+    Type: Number
+    Default: 1
+
+  WebDesiredCount:
+    Type: Number
+    Default: 1
+
+  ApiRateLimit:
+    Type: Number
+    Default: 1000
+
+Conditions:
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
 
 Resources:
   S3Stack:
@@ -58,25 +126,207 @@ Resources:
         Environment: !Ref Environment
         TranscodingQueueName: !Ref TranscodingQueueName
         EmailVerificationQueueName: !Ref EmailVerificationQueueName
+        TranscodingVisibilityTimeoutSeconds: !Ref TranscodingVisibilityTimeoutSeconds
+
+  EcrStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/ECR.yaml"
+      Parameters:
+        Environment: !Ref Environment
+
+  SecretsStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: QueuesStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/Secrets.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        RdsProxyEndpoint: !ImportValue shared-database-ProxyEndpoint
+        ResendFromEmail: !Ref ResendFromEmail
+
+  IamStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - S3Stack
+      - QueuesStack
+      - SecretsStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/IAM.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        UploadsBucketArn: !GetAtt S3Stack.Outputs.UploadsBucketArn
+        TranscodedBucketArn: !GetAtt S3Stack.Outputs.TranscodedBucketArn
+        TranscodingQueueArn: !GetAtt QueuesStack.Outputs.TranscodingQueueArn
+        EmailVerificationQueueArn: !GetAtt QueuesStack.Outputs.EmailVerificationQueueArn
+        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
+        ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
+
+  AlbStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/ALB.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        VpcId: !ImportValue shared-networking-VpcId
+        PublicSubnet01Id: !ImportValue shared-networking-PublicSubnet01Id
+        PublicSubnet02Id: !ImportValue shared-networking-PublicSubnet02Id
+        AlbSecurityGroupId: !ImportValue shared-security-AlbSecurityGroupId
+        AlbCertificateArn: !Ref AlbCertificateArn
+
+  EcsStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - IamStack
+      - AlbStack
+      - EcrStack
+      - SecretsStack
+      - S3Stack
+      - QueuesStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/ECS.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        PrivateSubnet01Id: !ImportValue shared-networking-PrivateSubnet01Id
+        PrivateSubnet02Id: !ImportValue shared-networking-PrivateSubnet02Id
+        AppSecurityGroupId: !ImportValue shared-security-AppSecurityGroupId
+        EcsTaskExecutionRoleArn: !GetAtt IamStack.Outputs.EcsTaskExecutionRoleArn
+        ApiTaskRoleArn: !GetAtt IamStack.Outputs.ApiTaskRoleArn
+        WorkerTaskRoleArn: !GetAtt IamStack.Outputs.WorkerTaskRoleArn
+        WebTaskRoleArn: !GetAtt IamStack.Outputs.WebTaskRoleArn
+        ApiTargetGroupArn: !GetAtt AlbStack.Outputs.ApiTargetGroupArn
+        WebTargetGroupArn: !GetAtt AlbStack.Outputs.WebTargetGroupArn
+        EcrApiRepositoryUri: !GetAtt EcrStack.Outputs.EcrApiRepositoryUri
+        EcrWorkerRepositoryUri: !GetAtt EcrStack.Outputs.EcrWorkerRepositoryUri
+        EcrWebRepositoryUri: !GetAtt EcrStack.Outputs.EcrWebRepositoryUri
+        ApiImageTag: !Ref ApiImageTag
+        WorkerImageTag: !Ref WorkerImageTag
+        WebImageTag: !Ref WebImageTag
+        UploadsBucketName: !GetAtt S3Stack.Outputs.UploadsBucketName
+        TranscodedBucketName: !GetAtt S3Stack.Outputs.TranscodedBucketName
+        SqsTranscodingQueueUrl: !GetAtt QueuesStack.Outputs.SqsTranscodingQueueUrl
+        SqsEmailVerificationQueueUrl: !GetAtt QueuesStack.Outputs.SqsEmailVerificationQueueUrl
+        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
+        ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
+        ResendFromEmail: !Ref ResendFromEmail
+        TranscodingQueueName: !Ref TranscodingQueueName
+        ApiDesiredCount: !Ref ApiDesiredCount
+        WorkerDesiredCount: !Ref WorkerDesiredCount
+        WebDesiredCount: !Ref WebDesiredCount
+        EnableWebService: !Ref EnableWebService
+
+  ApiGatewayStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: AlbStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/APIGateway.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        AlbIntegrationListenerArn: !GetAtt AlbStack.Outputs.AlbIntegrationListenerArn
+        ApiRateLimit: !Ref ApiRateLimit
+        RegionalCertificateArn: !Ref AlbCertificateArn
+
+  CloudFrontStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: S3Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/CloudFront.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        TranscodedBucketName: !GetAtt S3Stack.Outputs.TranscodedBucketName
+        TranscodedBucketArn: !GetAtt S3Stack.Outputs.TranscodedBucketArn
+        CloudFrontCertificateArn: !Ref CloudFrontCertificateArn
+
+  Route53Stack:
+    Type: AWS::CloudFormation::Stack
+    Condition: HasHostedZone
+    DependsOn:
+      - AlbStack
+      - ApiGatewayStack
+      - CloudFrontStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/Route53.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        DomainName: !Ref DomainName
+        HostedZoneId: !Ref HostedZoneId
+        AlbDnsName: !GetAtt AlbStack.Outputs.AlbDnsName
+        AlbHostedZoneId: !GetAtt AlbStack.Outputs.AlbHostedZoneId
+        CloudFrontDistributionDomainName: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionDomainName
+        ApiRegionalDomainName: !GetAtt ApiGatewayStack.Outputs.ApiRegionalDomainName
+        ApiRegionalHostedZoneId: !GetAtt ApiGatewayStack.Outputs.ApiRegionalHostedZoneId
+
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - EcsStack
+      - CloudFrontStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/Monitoring.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        AlertsTopicArn: !ImportValue shared-monitoring-AlertsTopicArn
+        ClusterName: !GetAtt EcsStack.Outputs.ClusterName
+        ApiServiceName: !GetAtt EcsStack.Outputs.ApiServiceName
+        WorkerServiceName: !GetAtt EcsStack.Outputs.WorkerServiceName
+        TranscodingDeadLetterQueueName: !GetAtt QueuesStack.Outputs.TranscodingDeadLetterQueueName
+        EmailVerificationDeadLetterQueueName: !GetAtt QueuesStack.Outputs.EmailVerificationDeadLetterQueueName
+        CloudFrontDistributionId: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionId
+
+  SsmStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - S3Stack
+      - QueuesStack
+      - EcrStack
+      - SecretsStack
+      - AlbStack
+      - ApiGatewayStack
+      - CloudFrontStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/SSM.yaml"
+      Parameters:
+        Environment: !Ref Environment
+        UploadsBucketName: !GetAtt S3Stack.Outputs.UploadsBucketName
+        TranscodedBucketName: !GetAtt S3Stack.Outputs.TranscodedBucketName
+        SqsTranscodingQueueUrl: !GetAtt QueuesStack.Outputs.SqsTranscodingQueueUrl
+        SqsEmailVerificationQueueUrl: !GetAtt QueuesStack.Outputs.SqsEmailVerificationQueueUrl
+        RdsProxyEndpoint: !ImportValue shared-database-ProxyEndpoint
+        EcrApiRepositoryUri: !GetAtt EcrStack.Outputs.EcrApiRepositoryUri
+        EcrWorkerRepositoryUri: !GetAtt EcrStack.Outputs.EcrWorkerRepositoryUri
+        EcrWebRepositoryUri: !GetAtt EcrStack.Outputs.EcrWebRepositoryUri
+        BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
+        ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
+        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        DomainName: !Ref DomainName
+        AlbDnsName: !GetAtt AlbStack.Outputs.AlbDnsName
+        ApiGatewayEndpoint: !GetAtt ApiGatewayStack.Outputs.HttpApiEndpoint
+        CloudFrontDistributionId: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionId
 
 Outputs:
-  UploadsBucketName:
+  S3UploadBucketName:
     Description: Raw video uploads bucket name
     Value: !GetAtt S3Stack.Outputs.UploadsBucketName
     Export:
-      Name: !Sub "${AWS::StackName}-UploadsBucketName"
+      Name: !Sub "${AWS::StackName}-S3UploadBucketName"
+
+  S3TranscodedBucketName:
+    Description: Transcoded video outputs bucket name
+    Value: !GetAtt S3Stack.Outputs.TranscodedBucketName
+    Export:
+      Name: !Sub "${AWS::StackName}-S3TranscodedBucketName"
 
   UploadsBucketArn:
     Description: Raw video uploads bucket ARN
     Value: !GetAtt S3Stack.Outputs.UploadsBucketArn
     Export:
       Name: !Sub "${AWS::StackName}-UploadsBucketArn"
-
-  TranscodedBucketName:
-    Description: Transcoded video outputs bucket name
-    Value: !GetAtt S3Stack.Outputs.TranscodedBucketName
-    Export:
-      Name: !Sub "${AWS::StackName}-TranscodedBucketName"
 
   TranscodedBucketArn:
     Description: Transcoded video outputs bucket ARN
@@ -107,3 +357,153 @@ Outputs:
     Value: !GetAtt QueuesStack.Outputs.EmailVerificationQueueArn
     Export:
       Name: !Sub "${AWS::StackName}-EmailVerificationQueueArn"
+
+  TranscodingDeadLetterQueueUrl:
+    Description: URL for the video transcoding dead-letter queue
+    Value: !GetAtt QueuesStack.Outputs.TranscodingDeadLetterQueueUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-TranscodingDeadLetterQueueUrl"
+
+  EmailVerificationDeadLetterQueueUrl:
+    Description: URL for the email verification dead-letter queue
+    Value: !GetAtt QueuesStack.Outputs.EmailVerificationDeadLetterQueueUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-EmailVerificationDeadLetterQueueUrl"
+
+  RdsProxyEndpoint:
+    Description: RDS Proxy endpoint from shared-database
+    Value: !ImportValue shared-database-ProxyEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-RdsProxyEndpoint"
+
+  DatabaseSecretArn:
+    Description: RDS-managed database credentials secret ARN
+    Value: !ImportValue shared-database-DatabaseSecretArn
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseSecretArn"
+
+  DatabaseUrlSecretArn:
+    Description: Secrets Manager ARN for DATABASE_URL
+    Value: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseUrlSecretArn"
+
+  BetterAuthSecretArn:
+    Description: Secrets Manager ARN for BETTER_AUTH_SECRET
+    Value: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
+    Export:
+      Name: !Sub "${AWS::StackName}-BetterAuthSecretArn"
+
+  ResendApiKeySecretArn:
+    Description: Secrets Manager ARN for RESEND_API_KEY
+    Value: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
+    Export:
+      Name: !Sub "${AWS::StackName}-ResendApiKeySecretArn"
+
+  EcrApiRepositoryUri:
+    Description: ECR URI for the Bun API image
+    Value: !GetAtt EcrStack.Outputs.EcrApiRepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-EcrApiRepositoryUri"
+
+  EcrWorkerRepositoryUri:
+    Description: ECR URI for the Go worker image
+    Value: !GetAtt EcrStack.Outputs.EcrWorkerRepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-EcrWorkerRepositoryUri"
+
+  EcrWebRepositoryUri:
+    Description: ECR URI for the Next.js web image
+    Value: !GetAtt EcrStack.Outputs.EcrWebRepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-EcrWebRepositoryUri"
+
+  ApiPublicUrl:
+    Description: Public API URL
+    Value: !Sub "https://api.${DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiPublicUrl"
+
+  WebPublicUrl:
+    Description: Public web URL
+    Value: !Sub "https://app.${DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-WebPublicUrl"
+
+  CloudFrontDomainName:
+    Description: CloudFront CDN domain (cdn.domain or distribution domain)
+    Value: !GetAtt CloudFrontStack.Outputs.CloudFrontDomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDomainName"
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID
+    Value: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionId
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
+
+  SsmParameterPrefix:
+    Description: SSM parameter prefix for VTP cross-stack wiring
+    Value: !GetAtt SsmStack.Outputs.SsmParameterPrefix
+    Export:
+      Name: !Sub "${AWS::StackName}-SsmParameterPrefix"
+
+  RedisCacheEndpoint:
+    Description: ElastiCache Redis endpoint from shared-cache
+    Value: !ImportValue shared-cache-CacheEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-RedisCacheEndpoint"
+
+  RedisCachePort:
+    Description: ElastiCache Redis port from shared-cache
+    Value: !ImportValue shared-cache-CachePort
+    Export:
+      Name: !Sub "${AWS::StackName}-RedisCachePort"
+
+  AlbDnsName:
+    Description: Application Load Balancer DNS name
+    Value: !GetAtt AlbStack.Outputs.AlbDnsName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDnsName"
+
+  AlbHostedZoneId:
+    Description: Route 53 hosted zone ID for ALB alias records
+    Value: !GetAtt AlbStack.Outputs.AlbHostedZoneId
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbHostedZoneId"
+
+  ApiGatewayEndpoint:
+    Description: API Gateway invoke URL (WAF-protected)
+    Value: !GetAtt ApiGatewayStack.Outputs.HttpApiEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiGatewayEndpoint"
+
+  EcsClusterName:
+    Description: ECS cluster name
+    Value: !GetAtt EcsStack.Outputs.ClusterName
+    Export:
+      Name: !Sub "${AWS::StackName}-EcsClusterName"
+
+  ApiServiceName:
+    Description: API ECS service name
+    Value: !GetAtt EcsStack.Outputs.ApiServiceName
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiServiceName"
+
+  WorkerServiceName:
+    Description: Worker ECS service name
+    Value: !GetAtt EcsStack.Outputs.WorkerServiceName
+    Export:
+      Name: !Sub "${AWS::StackName}-WorkerServiceName"
+
+  ApiTaskRoleArn:
+    Description: IAM task role ARN for the API service
+    Value: !GetAtt IamStack.Outputs.ApiTaskRoleArn
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiTaskRoleArn"
+
+  WorkerTaskRoleArn:
+    Description: IAM task role ARN for the worker service
+    Value: !GetAtt IamStack.Outputs.WorkerTaskRoleArn
+    Export:
+      Name: !Sub "${AWS::StackName}-WorkerTaskRoleArn"

@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudWatch alarms for VTP ECS and SQS resources
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  AlertsTopicArn:
+    Type: String
+    Default: ""
+    Description: SNS topic ARN from shared-monitoring (optional)
+
+  ClusterName:
+    Type: String
+
+  ApiServiceName:
+    Type: String
+
+  WorkerServiceName:
+    Type: String
+
+  TranscodingDeadLetterQueueName:
+    Type: String
+
+  EmailVerificationDeadLetterQueueName:
+    Type: String
+
+  CloudFrontDistributionId:
+    Type: String
+    Default: ""
+    Description: CloudFront distribution ID for 5xx monitoring
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref AlertsTopicArn, ""]]
+  HasCloudFrontDistribution: !Not [!Equals [!Ref CloudFrontDistributionId, ""]]
+
+Resources:
+  TranscodingDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vtp-${Environment}-transcoding-dlq-depth"
+      AlarmDescription: Messages present in the transcoding dead-letter queue
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref TranscodingDeadLetterQueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - - !Ref AlertsTopicArn
+        - !Ref AWS::NoValue
+
+  EmailVerificationDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vtp-${Environment}-email-dlq-depth"
+      AlarmDescription: Messages present in the email verification dead-letter queue
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref EmailVerificationDeadLetterQueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - - !Ref AlertsTopicArn
+        - !Ref AWS::NoValue
+
+  ApiRunningTaskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vtp-${Environment}-api-running-tasks-low"
+      AlarmDescription: API service has no running tasks
+      Namespace: ECS/ContainerInsights
+      MetricName: RunningTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+        - Name: ServiceName
+          Value: !Ref ApiServiceName
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - - !Ref AlertsTopicArn
+        - !Ref AWS::NoValue
+
+  WorkerRunningTaskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vtp-${Environment}-worker-running-tasks-low"
+      AlarmDescription: Worker service has no running tasks
+      Namespace: ECS/ContainerInsights
+      MetricName: RunningTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+        - Name: ServiceName
+          Value: !Ref WorkerServiceName
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - - !Ref AlertsTopicArn
+        - !Ref AWS::NoValue
+
+  CloudFront5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasCloudFrontDistribution
+    Properties:
+      AlarmName: !Sub "vtp-${Environment}-cloudfront-5xx-high"
+      AlarmDescription: CloudFront 5xx error rate is elevated
+      Namespace: AWS/CloudFront
+      MetricName: 5xxErrorRate
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref CloudFrontDistributionId
+        - Name: Region
+          Value: Global
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - - !Ref AlertsTopicArn
+        - !Ref AWS::NoValue
+
+Outputs:
+  TranscodingDlqAlarmName:
+    Description: Transcoding DLQ depth alarm name
+    Value: !Ref TranscodingDlqAlarm
+
+  EmailVerificationDlqAlarmName:
+    Description: Email verification DLQ depth alarm name
+    Value: !Ref EmailVerificationDlqAlarm
+
+  CloudFront5xxAlarmName:
+    Description: CloudFront 5xx error rate alarm name
+    Condition: HasCloudFrontDistribution
+    Value: !Ref CloudFront5xxAlarm

@@ -13,17 +13,17 @@ Parameters:
   UploadsBucketName:
     Type: String
     Default: vtp-uploads
-    Description: Bucket for raw video uploads
+    Description: Bucket for raw video uploads (key layout uploads/{userId}/{uuid}/{filename})
 
   TranscodedBucketName:
     Type: String
     Default: vtp-transcoded
-    Description: Bucket for transcoded video outputs
+    Description: Bucket for transcoded outputs (hls/, thumbnails/, audio/ prefixes)
 
   CorsAllowedOrigins:
     Type: CommaDelimitedList
     Default: "*"
-    Description: Origins allowed for browser-based uploads and playback
+    Description: Origins allowed for browser-based presigned PUT uploads
 
 Resources:
   UploadsBucket:
@@ -50,7 +50,6 @@ Resources:
             AllowedMethods:
               - GET
               - PUT
-              - POST
               - HEAD
             AllowedOrigins: !Ref CorsAllowedOrigins
             ExposedHeaders:
@@ -93,19 +92,6 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders:
-              - "*"
-            AllowedMethods:
-              - GET
-              - HEAD
-            AllowedOrigins: !Ref CorsAllowedOrigins
-            ExposedHeaders:
-              - ETag
-              - Content-Length
-              - Content-Type
-            MaxAge: 3600
       LifecycleConfiguration:
         Rules:
           - Id: ExpireNoncurrentTranscodedVersions

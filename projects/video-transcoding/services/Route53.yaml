@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route 53 DNS records for VTP api, app, and cdn subdomains
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  DomainName:
+    Type: String
+    Default: example.com
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID for the root domain
+
+  AlbDnsName:
+    Type: String
+
+  AlbHostedZoneId:
+    Type: String
+
+  CloudFrontDistributionDomainName:
+    Type: String
+    Description: xxx.cloudfront.net domain from the distribution
+
+  ApiRegionalDomainName:
+    Type: String
+    Default: ""
+    Description: API Gateway regional domain for api.domain (WAF-protected)
+
+  ApiRegionalHostedZoneId:
+    Type: String
+    Default: ""
+    Description: API Gateway regional hosted zone ID
+
+Conditions:
+  UseApiGatewayDomain: !Not [!Equals [!Ref ApiRegionalDomainName, ""]]
+  UseAlbForApi: !Equals [!Ref ApiRegionalDomainName, ""]
+
+Resources:
+  CdnARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "cdn.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !Ref CloudFrontDistributionDomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  CdnAAAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "cdn.${DomainName}"
+      Type: AAAA
+      AliasTarget:
+        DNSName: !Ref CloudFrontDistributionDomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  AppARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "app.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !Ref AlbDnsName
+        HostedZoneId: !Ref AlbHostedZoneId
+        EvaluateTargetHealth: true
+
+  AppAAAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "app.${DomainName}"
+      Type: AAAA
+      AliasTarget:
+        DNSName: !Ref AlbDnsName
+        HostedZoneId: !Ref AlbHostedZoneId
+        EvaluateTargetHealth: true
+
+  ApiARecordApiGateway:
+    Type: AWS::Route53::RecordSet
+    Condition: UseApiGatewayDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !Ref ApiRegionalDomainName
+        HostedZoneId: !Ref ApiRegionalHostedZoneId
+        EvaluateTargetHealth: false
+
+  ApiAAAARecordApiGateway:
+    Type: AWS::Route53::RecordSet
+    Condition: UseApiGatewayDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: AAAA
+      AliasTarget:
+        DNSName: !Ref ApiRegionalDomainName
+        HostedZoneId: !Ref ApiRegionalHostedZoneId
+        EvaluateTargetHealth: false
+
+  ApiARecordAlb:
+    Type: AWS::Route53::RecordSet
+    Condition: UseAlbForApi
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !Ref AlbDnsName
+        HostedZoneId: !Ref AlbHostedZoneId
+        EvaluateTargetHealth: true
+
+  ApiAAAARecordAlb:
+    Type: AWS::Route53::RecordSet
+    Condition: UseAlbForApi
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: AAAA
+      AliasTarget:
+        DNSName: !Ref AlbDnsName
+        HostedZoneId: !Ref AlbHostedZoneId
+        EvaluateTargetHealth: true
+
+Outputs:
+  CdnRecordName:
+    Description: CDN DNS record FQDN
+    Value: !Sub "cdn.${DomainName}"
+
+  AppRecordName:
+    Description: Web app DNS record FQDN
+    Value: !Sub "app.${DomainName}"
+
+  ApiRecordName:
+    Description: API DNS record FQDN
+    Value: !Sub "api.${DomainName}"

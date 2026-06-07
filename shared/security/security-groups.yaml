@@ -39,6 +39,11 @@ Resources:
           ToPort: 3000
           SourceSecurityGroupId: !Ref AlbSecurityGroup
 
+        - IpProtocol: tcp
+          FromPort: 3001
+          ToPort: 3001
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
       Tags:
         - Key: Name
           Value: app-security-group

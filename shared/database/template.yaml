@@ -55,6 +55,8 @@ Outputs:
   DatabaseSecretArn:
     Description: Secrets Manager secret ARN
     Value: !GetAtt PostgreSQLStack.Outputs.DatabaseSecretArn
+    Export:
+      Name: shared-database-DatabaseSecretArn
 
   DatabaseInstanceIdentifier:
     Description: Database instance identifier
@@ -73,6 +75,8 @@ Outputs:
   ProxyEndpoint:
     Description: RDS Proxy endpoint
     Value: !GetAtt RDSProxyStack.Outputs.ProxyEndpoint
+    Export:
+      Name: shared-database-ProxyEndpoint
 
   ProxyRoleArn:
     Description: IAM role used by RDS Proxy

@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM roles for VTP ECS Fargate tasks
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  UploadsBucketArn:
+    Type: String
+
+  TranscodedBucketArn:
+    Type: String
+
+  TranscodingQueueArn:
+    Type: String
+
+  EmailVerificationQueueArn:
+    Type: String
+
+  DatabaseUrlSecretArn:
+    Type: String
+
+  BetterAuthSecretArn:
+    Type: String
+
+  ResendApiKeySecretArn:
+    Type: String
+
+Resources:
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "vtp-${Environment}-ecs-execution"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-ecs-execution"
+        - Key: Project
+          Value: video-transcoding
+
+  EcsExecutionSecretsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-ecs-execution-secrets"
+      Roles:
+        - !Ref EcsTaskExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PullSecretsForContainerStartup
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Ref DatabaseUrlSecretArn
+              - !Ref BetterAuthSecretArn
+              - !Ref ResendApiKeySecretArn
+
+  ApiTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "vtp-${Environment}-api-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-api-task"
+        - Key: Project
+          Value: video-transcoding
+
+  ApiS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-api-s3"
+      Roles:
+        - !Ref ApiTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PresignUploads
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+            Resource: !Sub "${UploadsBucketArn}/uploads/*"
+          - Sid: ReadTranscodedOutputs
+            Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${TranscodedBucketArn}/*"
+
+  ApiSqsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-api-sqs"
+      Roles:
+        - !Ref ApiTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnqueueJobs
+            Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:GetQueueAttributes
+            Resource:
+              - !Ref TranscodingQueueArn
+              - !Ref EmailVerificationQueueArn
+
+  ApiSecretsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-api-secrets"
+      Roles:
+        - !Ref ApiTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadAppSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Ref DatabaseUrlSecretArn
+              - !Ref BetterAuthSecretArn
+              - !Ref ResendApiKeySecretArn
+
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "vtp-${Environment}-worker-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-worker-task"
+        - Key: Project
+          Value: video-transcoding
+
+  WorkerS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-worker-s3"
+      Roles:
+        - !Ref WorkerTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadRawUploads
+            Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${UploadsBucketArn}/*"
+          - Sid: ListTranscodedPrefixes
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+            Resource: !Ref TranscodedBucketArn
+            Condition:
+              StringLike:
+                s3:prefix:
+                  - hls/*
+                  - thumbnails/*
+                  - audio/*
+          - Sid: WriteTranscodedOutputs
+            Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub "${TranscodedBucketArn}/hls/*"
+              - !Sub "${TranscodedBucketArn}/thumbnails/*"
+              - !Sub "${TranscodedBucketArn}/audio/*"
+
+  WorkerSqsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-worker-sqs"
+      Roles:
+        - !Ref WorkerTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ConsumeQueues
+            Effect: Allow
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:ChangeMessageVisibility
+              - sqs:GetQueueAttributes
+            Resource:
+              - !Ref TranscodingQueueArn
+              - !Ref EmailVerificationQueueArn
+
+  WorkerSecretsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "vtp-${Environment}-worker-secrets"
+      Roles:
+        - !Ref WorkerTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadWorkerSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Ref DatabaseUrlSecretArn
+              - !Ref ResendApiKeySecretArn
+
+  WebTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "vtp-${Environment}-web-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-web-task"
+        - Key: Project
+          Value: video-transcoding
+
+Outputs:
+  EcsTaskExecutionRoleArn:
+    Description: ECS task execution role ARN
+    Value: !GetAtt EcsTaskExecutionRole.Arn
+
+  ApiTaskRoleArn:
+    Description: API ECS task role ARN
+    Value: !GetAtt ApiTaskRole.Arn
+
+  WorkerTaskRoleArn:
+    Description: Worker ECS task role ARN
+    Value: !GetAtt WorkerTaskRole.Arn
+
+  WebTaskRoleArn:
+    Description: Web ECS task role ARN
+    Value: !GetAtt WebTaskRole.Arn

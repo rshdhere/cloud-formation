@@ -1,0 +1,318 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFront CDN for transcoded S3 outputs via Origin Access Control
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+  DomainName:
+    Type: String
+    Default: example.com
+
+  TranscodedBucketName:
+    Type: String
+
+  TranscodedBucketArn:
+    Type: String
+
+  CloudFrontCertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN in us-east-1 for cdn.domain (required for custom domain)
+
+Conditions:
+  HasCloudFrontCertificate: !Not [!Equals [!Ref CloudFrontCertificateArn, ""]]
+
+Resources:
+  TranscodedOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "vtp-${Environment}-transcoded-oac"
+        Description: OAC for private transcoded S3 bucket reads
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  HlsSegmentCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "vtp-${Environment}-hls-segment-cache"
+        Comment: Long-lived immutable cache for .ts segments
+        DefaultTTL: 31536000
+        MaxTTL: 31536000
+        MinTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  HlsPlaylistCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "vtp-${Environment}-hls-playlist-cache"
+        Comment: Short TTL for HLS playlist manifests
+        DefaultTTL: 60
+        MaxTTL: 60
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  ThumbnailCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "vtp-${Environment}-thumbnail-cache"
+        Comment: 7-day cache for poster thumbnails
+        DefaultTTL: 604800
+        MaxTTL: 604800
+        MinTTL: 3600
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  AudioCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "vtp-${Environment}-audio-cache"
+        Comment: 24-hour cache for MP3 audio delivery
+        DefaultTTL: 86400
+        MaxTTL: 604800
+        MinTTL: 3600
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  CdnCorsResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "vtp-${Environment}-cdn-cors"
+        Comment: Allow web app origin to load CDN assets
+        CorsConfig:
+          AccessControlAllowCredentials: false
+          AccessControlAllowHeaders:
+            Items:
+              - "*"
+          AccessControlAllowMethods:
+            Items:
+              - GET
+              - HEAD
+              - OPTIONS
+          AccessControlAllowOrigins:
+            Items:
+              - !Sub "https://app.${DomainName}"
+          AccessControlExposeHeaders:
+            Items:
+              - ETag
+              - Content-Length
+              - Content-Type
+          AccessControlMaxAgeSec: 3600
+          OriginOverride: true
+
+  TranscodedDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "VTP transcoded outputs (${Environment})"
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases: !If
+          - HasCloudFrontCertificate
+          - - !Sub "cdn.${DomainName}"
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCloudFrontCertificate
+          - AcmCertificateArn: !Ref CloudFrontCertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: TranscodedS3Origin
+            DomainName: !Sub "${TranscodedBucketName}.s3.${AWS::Region}.amazonaws.com"
+            OriginAccessControlId: !GetAtt TranscodedOriginAccessControl.Id
+            S3OriginConfig: {}
+        DefaultCacheBehavior:
+          TargetOriginId: TranscodedS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+        CacheBehaviors:
+          - PathPattern: /hls/*/*/*.ts
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref HlsSegmentCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+          - PathPattern: /hls/*/*.m3u8
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref HlsPlaylistCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+          - PathPattern: /hls/*/master.m3u8
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref HlsPlaylistCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+          - PathPattern: /thumbnails/*
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref ThumbnailCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+          - PathPattern: /audio/*
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref AudioCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+          - PathPattern: /hls/*
+            TargetOriginId: TranscodedS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: !Ref HlsPlaylistCachePolicy
+            ResponseHeadersPolicyId: !Ref CdnCorsResponseHeadersPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-cdn"
+        - Key: Project
+          Value: video-transcoding
+
+  TranscodedBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: TranscodedDistribution
+    Properties:
+      Bucket: !Ref TranscodedBucketName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadHls
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${TranscodedBucketArn}/hls/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${TranscodedDistribution}"
+          - Sid: AllowCloudFrontReadThumbnails
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${TranscodedBucketArn}/thumbnails/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${TranscodedDistribution}"
+          - Sid: AllowCloudFrontReadAudio
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${TranscodedBucketArn}/audio/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${TranscodedDistribution}"
+
+Outputs:
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref TranscodedDistribution
+
+  CloudFrontDomainName:
+    Description: CloudFront distribution domain (cdn.custom or xxx.cloudfront.net)
+    Value: !If
+      - HasCloudFrontCertificate
+      - !Sub "cdn.${DomainName}"
+      - !GetAtt TranscodedDistribution.DomainName
+
+  CloudFrontDistributionDomainName:
+    Description: Raw CloudFront domain name for Route 53 alias
+    Value: !GetAtt TranscodedDistribution.DomainName
+
+  OriginAccessControlId:
+    Description: Origin Access Control ID
+    Value: !GetAtt TranscodedOriginAccessControl.Id
