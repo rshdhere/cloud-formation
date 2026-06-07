@@ -213,8 +213,19 @@ Outputs:
     Value: !Ref HttpsListener
 
   AlbIntegrationListenerArn:
-    Description: Listener ARN used by API Gateway (HTTPS preferred, else HTTP)
+    Description: Listener ARN used by API Gateway VPC Link integrations
     Value: !If
       - HasCertificate
       - !Ref HttpsListener
       - !Ref HttpListener
+
+  AlbIntegrationUrl:
+    Description: ALB URL for API Gateway HTTP proxy (INTERNET) integration
+    Value: !If
+      - HasCertificate
+      - !Sub
+        - "https://${AlbDnsName}"
+        - AlbDnsName: !GetAtt ApplicationLoadBalancer.DNSName
+      - !Sub
+        - "http://${AlbDnsName}"
+        - AlbDnsName: !GetAtt ApplicationLoadBalancer.DNSName

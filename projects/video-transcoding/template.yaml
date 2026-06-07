@@ -227,7 +227,7 @@ Resources:
       Parameters:
         Environment: !Ref Environment
         DomainName: !Ref DomainName
-        AlbIntegrationListenerArn: !GetAtt AlbStack.Outputs.AlbIntegrationListenerArn
+        AlbIntegrationUrl: !GetAtt AlbStack.Outputs.AlbIntegrationUrl
         ApiRateLimit: !Ref ApiRateLimit
         RegionalCertificateArn: !Ref AlbCertificateArn
 

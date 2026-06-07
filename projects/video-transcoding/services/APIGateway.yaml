@@ -10,9 +10,9 @@ Parameters:
     Type: String
     Default: example.com
 
-  AlbIntegrationListenerArn:
+  AlbIntegrationUrl:
     Type: String
-    Description: ALB listener ARN for HTTP proxy integration
+    Description: ALB base URL for HTTP proxy integration (http or https)
 
   ApiRateLimit:
     Type: Number
@@ -96,15 +96,16 @@ Resources:
       ApiId: !Ref HttpApi
       IntegrationType: HTTP_PROXY
       IntegrationMethod: ANY
-      IntegrationUri: !Ref AlbIntegrationListenerArn
+      IntegrationUri: !Ref AlbIntegrationUrl
       PayloadFormatVersion: "1.0"
       ConnectionType: INTERNET
       TimeoutInMillis: 30000
       RequestParameters:
-        overwrite:header.host: !Sub "api.${DomainName}"
+        "overwrite:header.host": !Sub "api.${DomainName}"
 
   HttpApiDefaultRoute:
     Type: AWS::ApiGatewayV2::Route
+    DependsOn: HttpApiIntegration
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: $default
@@ -124,6 +125,9 @@ Resources:
 
   WebACLAssociation:
     Type: AWS::WAFv2::WebACLAssociation
+    DependsOn:
+      - HttpApiStage
+      - HttpApiDefaultRoute
     Properties:
       ResourceArn: !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${HttpApi}/stages/${HttpApiStage}"
       WebACLArn: !GetAtt WebACL.Arn
