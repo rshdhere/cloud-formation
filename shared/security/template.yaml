@@ -26,6 +26,20 @@ Parameters:
     Default: transcoding-infra
     Description: IAM user that runs local aws cloudformation deploy
 
+  CreateDeployUserIam:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Attach vtp-cloudformation-iam to the deploy user. Set false for the
+      bootstrap deploy; the GitHub Actions OIDC role has IAM permissions and
+      enables this on the follow-up update.
+
+Conditions:
+  ShouldCreateDeployUserIam: !Equals [!Ref CreateDeployUserIam, "true"]
+
 Resources:
   SecurityGroupsStack:
     Type: AWS::CloudFormation::Stack
@@ -47,6 +61,7 @@ Resources:
 
   DeployUserIamStack:
     Type: AWS::CloudFormation::Stack
+    Condition: ShouldCreateDeployUserIam
     Properties:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/shared/security/deploy-user-iam.yaml"
       Parameters:
@@ -90,5 +105,6 @@ Outputs:
       Name: shared-security-GithubActionsCloudFormationRoleArn
 
   VtpDeployUserPolicyName:
+    Condition: ShouldCreateDeployUserIam
     Description: Inline IAM policy name granting vtp-* role management to the deploy user
     Value: !GetAtt DeployUserIamStack.Outputs.DeployUserPolicyName

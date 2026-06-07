@@ -15,6 +15,8 @@ env:
   AWS_ACCOUNT_ID: 591446361969
   TEMPLATE_BUCKET_NAME: raashed-cf-templates-ap-south-1
   ENVIRONMENT: prod
+  DOMAIN_NAME: ${{ vars.DOMAIN_NAME || 'example.com' }}
+  HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID || '' }}
   ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
   HAS_BOOTSTRAP_CREDS: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID != '' && secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY != '' }}
 
@@ -70,6 +72,11 @@ jobs:
 
       - name: Deploy shared security
         run: |
+          create_deploy_user_iam="true"
+          if [ "${HAS_BOOTSTRAP_CREDS}" = "true" ]; then
+            create_deploy_user_iam="false"
+          fi
+
           aws cloudformation deploy \
             --stack-name shared-security \
             --template-file shared/security/template.yaml \
@@ -80,7 +87,8 @@ jobs:
               TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
               GitHubOwner=rshdhere \
               GitHubRepository=cloud-formation \
-              GitHubBranch=main
+              GitHubBranch=main \
+              CreateDeployUserIam="${create_deploy_user_iam}"
 
       - name: Reconfigure AWS credentials via OIDC
         if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
@@ -89,6 +97,22 @@ jobs:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsCloudFormation
+
+      - name: Attach deploy-user IAM policy
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
+        run: |
+          aws cloudformation deploy \
+            --stack-name shared-security \
+            --template-file shared/security/template.yaml \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
+              GitHubOwner=rshdhere \
+              GitHubRepository=cloud-formation \
+              GitHubBranch=main \
+              CreateDeployUserIam=true
 
       - name: Reset shared monitoring stack if it is stuck
         run: |
@@ -162,10 +186,26 @@ jobs:
             --template-file projects/video-transcoding/template.yaml \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               TemplateBucketName="${TEMPLATE_BUCKET_NAME}" \
               Environment="${ENVIRONMENT}" \
+              DomainName="${DOMAIN_NAME}" \
               UploadsBucketName=vtp-uploads \
               TranscodedBucketName=vtp-transcoded \
+              CorsAllowedOrigins="https://app.${DOMAIN_NAME}" \
               TranscodingQueueName=vtp-transcoding \
-              EmailVerificationQueueName=vtp-email-verification
+              EmailVerificationQueueName=vtp-email-verification \
+              ResendFromEmail="noreply@${DOMAIN_NAME}" \
+              AlbCertificateArn="${ALB_CERTIFICATE_ARN:-}" \
+              CloudFrontCertificateArn="${CLOUDFRONT_CERTIFICATE_ARN:-}" \
+              HostedZoneId="${HOSTED_ZONE_ID:-}" \
+              ApiImageTag="${API_IMAGE_TAG:-latest}" \
+              WorkerImageTag="${WORKER_IMAGE_TAG:-latest}" \
+              WebImageTag="${WEB_IMAGE_TAG:-latest}"
+        env:
+          ALB_CERTIFICATE_ARN: ${{ vars.ALB_CERTIFICATE_ARN }}
+          CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
+          API_IMAGE_TAG: ${{ vars.API_IMAGE_TAG }}
+          WORKER_IMAGE_TAG: ${{ vars.WORKER_IMAGE_TAG }}
+          WEB_IMAGE_TAG: ${{ vars.WEB_IMAGE_TAG }}
