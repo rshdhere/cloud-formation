@@ -20,7 +20,7 @@ Set GitHub repository variables before deploying VTP:
 
 - `DOMAIN_NAME` — root domain (CORS, email sender, URL outputs)
 - `HOSTED_ZONE_ID` — Route 53 zone ID (creates `api.`, `app.`, `cdn.` records)
-- `ALB_CERTIFICATE_ARN` — regional ACM cert (`ap-south-1`) for ALB + API Gateway
+- `ALB_CERTIFICATE_ARN` — regional ACM cert (`ap-south-1`) for ALB (`api.`, `app.` subdomains)
 - `CLOUDFRONT_CERTIFICATE_ARN` — **us-east-1** ACM cert for CloudFront `cdn.` subdomain
 
 See [projects/video-transcoding/README.md](projects/video-transcoding/README.md) for ACM validation and smoke-test steps.

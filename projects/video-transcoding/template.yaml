@@ -53,7 +53,7 @@ Parameters:
   AlbCertificateArn:
     Type: String
     Default: ""
-    Description: Regional ACM certificate ARN for ALB and API Gateway (api/app subdomains)
+    Description: Regional ACM certificate ARN for ALB HTTPS (api/app subdomains)
 
   CloudFrontCertificateArn:
     Type: String
@@ -175,6 +175,7 @@ Resources:
         PublicSubnet02Id: !ImportValue shared-networking-PublicSubnet02Id
         AlbSecurityGroupId: !ImportValue shared-security-AlbSecurityGroupId
         AlbCertificateArn: !Ref AlbCertificateArn
+        ApiRateLimit: !Ref ApiRateLimit
 
   EcsStack:
     Type: AWS::CloudFormation::Stack
@@ -219,18 +220,6 @@ Resources:
         WebDesiredCount: !Ref WebDesiredCount
         EnableWebService: !Ref EnableWebService
 
-  ApiGatewayStack:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: AlbStack
-    Properties:
-      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/APIGateway.yaml"
-      Parameters:
-        Environment: !Ref Environment
-        DomainName: !Ref DomainName
-        AlbIntegrationUrl: !GetAtt AlbStack.Outputs.AlbIntegrationUrl
-        ApiRateLimit: !Ref ApiRateLimit
-        RegionalCertificateArn: !Ref AlbCertificateArn
-
   CloudFrontStack:
     Type: AWS::CloudFormation::Stack
     DependsOn: S3Stack
@@ -248,7 +237,6 @@ Resources:
     Condition: HasHostedZone
     DependsOn:
       - AlbStack
-      - ApiGatewayStack
       - CloudFrontStack
     Properties:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/Route53.yaml"
@@ -259,8 +247,6 @@ Resources:
         AlbDnsName: !GetAtt AlbStack.Outputs.AlbDnsName
         AlbHostedZoneId: !GetAtt AlbStack.Outputs.AlbHostedZoneId
         CloudFrontDistributionDomainName: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionDomainName
-        ApiRegionalDomainName: !GetAtt ApiGatewayStack.Outputs.ApiRegionalDomainName
-        ApiRegionalHostedZoneId: !GetAtt ApiGatewayStack.Outputs.ApiRegionalHostedZoneId
 
   MonitoringStack:
     Type: AWS::CloudFormation::Stack
@@ -287,7 +273,6 @@ Resources:
       - EcrStack
       - SecretsStack
       - AlbStack
-      - ApiGatewayStack
       - CloudFrontStack
     Properties:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/SSM.yaml"
@@ -306,7 +291,6 @@ Resources:
         DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
         DomainName: !Ref DomainName
         AlbDnsName: !GetAtt AlbStack.Outputs.AlbDnsName
-        ApiGatewayEndpoint: !GetAtt ApiGatewayStack.Outputs.HttpApiEndpoint
         CloudFrontDistributionId: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionId
 
 Outputs:
@@ -472,11 +456,20 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-AlbHostedZoneId"
 
-  ApiGatewayEndpoint:
-    Description: API Gateway invoke URL (WAF-protected)
-    Value: !GetAtt ApiGatewayStack.Outputs.HttpApiEndpoint
+  ApiEndpoint:
+    Description: Public API URL (WAF-protected ALB; api.domain when Route 53 is configured)
+    Value: !If
+      - HasHostedZone
+      - !Sub "https://api.${DomainName}"
+      - !GetAtt AlbStack.Outputs.AlbDnsName
     Export:
-      Name: !Sub "${AWS::StackName}-ApiGatewayEndpoint"
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+
+  WebAclArn:
+    Description: Regional WAF WebACL ARN associated with the ALB
+    Value: !GetAtt AlbStack.Outputs.WebAclArn
+    Export:
+      Name: !Sub "${AWS::StackName}-WebAclArn"
 
   EcsClusterName:
     Description: ECS cluster name

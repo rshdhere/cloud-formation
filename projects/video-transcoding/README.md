@@ -15,14 +15,14 @@ Shared stacks (all projects)
 Project stack
 └── video-transcoding
     ├── Phase 1: S3, SQS+DLQ, Secrets Manager, ECR, SSM
-    ├── Phase 2: ECS Fargate, ALB, IAM task roles, API Gateway, WAF
+    ├── Phase 2: ECS Fargate, ALB, WAF, IAM task roles
     └── Phase 3: CloudFront OAC, Route 53, ACM certificates
 ```
 
 ### Traffic flow
 
 ```text
-Browser → API Gateway (WAF) [api.domain] → ALB [Host: api.domain] → ECS API :3001
+Browser → ALB (WAF) [api.domain] → ECS API :3001
 Browser → ALB [app.domain] → ECS Web :3000
 Browser → CloudFront [cdn.domain] → S3 transcoded (OAC) — hls/, thumbnails/, audio/
 Workers  → SQS (private subnets, no ALB)
@@ -85,7 +85,7 @@ aws s3 sync projects/video-transcoding \
 | `EmailVerificationQueueName` | `vtp-email-verification` | Email verification queue |
 | `TranscodingVisibilityTimeoutSeconds` | `1800` | 30 min visibility for long ffmpeg jobs |
 | `ResendFromEmail` | `noreply@example.com` | Transactional email sender |
-| `AlbCertificateArn` | _(empty)_ | Regional ACM cert for ALB + API Gateway (`api.`, `app.`) |
+| `AlbCertificateArn` | _(empty)_ | Regional ACM cert for ALB HTTPS (`api.`, `app.`) |
 | `CloudFrontCertificateArn` | _(empty)_ | **us-east-1** ACM cert for `cdn.` (CloudFront requirement) |
 | `HostedZoneId` | _(empty)_ | Route 53 hosted zone ID — enables DNS records |
 | `ApiImageTag` / `WorkerImageTag` / `WebImageTag` | `latest` | ECR image tags |
@@ -104,7 +104,7 @@ Set these GitHub repository variables for CI deploys:
 ### ACM certificates (one-time setup)
 
 ```bash
-# Regional cert (ap-south-1) — ALB + API Gateway: api.domain, app.domain
+# Regional cert (ap-south-1) — ALB HTTPS: api.domain, app.domain
 aws acm request-certificate \
   --region ap-south-1 \
   --domain-name yourdomain.com \
@@ -165,7 +165,8 @@ S3 bucket policy allows `s3:GetObject` from CloudFront **only** on `hls/*`, `thu
 | `CloudFrontDomainName` | `CLOUDFRONT_DOMAIN` on API ECS task |
 | `CloudFrontDistributionId` | Monitoring, debugging |
 | `AlbDnsName` | Route 53 `app.` alias target |
-| `ApiGatewayEndpoint` | Interim API URL until Route 53 wired |
+| `ApiEndpoint` | Public API URL (`api.domain` or ALB DNS until Route 53 wired) |
+| `WebAclArn` | Regional WAF WebACL on the ALB |
 | `EcsClusterName` | ECS cluster (`vtp-prod`) |
 | `ApiTaskRoleArn` / `WorkerTaskRoleArn` | IAM task roles (no static AWS keys) |
 | `RedisCacheEndpoint` | Future session/cache wiring |
@@ -190,7 +191,6 @@ All parameters are under `/vtp/{Environment}/`:
 /vtp/prod/urls/web-public-url
 /vtp/prod/urls/cloudfront-domain
 /vtp/prod/alb/dns-name
-/vtp/prod/urls/api-gateway-endpoint
 /vtp/prod/cloudfront/distribution-id
 ```
 
@@ -380,11 +380,12 @@ DATABASE_URL="postgresql://..." bun run db:migrate
 ### Health check
 
 ```bash
-# API (WAF-protected, via api.domain or API Gateway URL)
+# API (WAF-protected ALB, via api.domain)
 curl -sf "https://api.yourdomain.com/health"
 
-# Or interim execute-api URL
-curl -sf "$(aws ssm get-parameter --name /vtp/prod/urls/api-gateway-endpoint --query Parameter.Value --output text)/health"
+# Or interim ALB DNS (HTTP until ACM + Route 53 are configured)
+curl -sf "http://$(aws ssm get-parameter --name /vtp/prod/alb/dns-name --query Parameter.Value --output text)/health" \
+  -H "Host: api.yourdomain.com"
 ```
 
 1. `GET /health` returns 200
@@ -408,6 +409,6 @@ curl -sI "https://cdn.yourdomain.com/thumbnails/VIDEO_ID/poster.jpg"
 | Phase | Status | Resources |
 |-------|--------|-----------|
 | **1 — Foundation** | Implemented | S3, SQS+DLQ, Secrets, ECR, SSM |
-| **2 — Compute** | Implemented | ECS Fargate, ALB, IAM task roles, API Gateway, WAF, worker autoscaling |
-| **3 — CDN** | Implemented | CloudFront OAC, S3 bucket policy, Route 53, API GW custom domain |
+| **2 — Compute** | Implemented | ECS Fargate, ALB, WAF, IAM task roles, worker autoscaling |
+| **3 — CDN** | Implemented | CloudFront OAC, S3 bucket policy, Route 53 (`api.`, `app.`, `cdn.`) |
 | **4 — Ops** | Implemented | DLQ, ECS, CloudFront 5xx alarms via shared SNS |

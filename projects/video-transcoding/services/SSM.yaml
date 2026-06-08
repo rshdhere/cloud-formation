@@ -51,10 +51,6 @@ Parameters:
     Type: String
     Default: pending
 
-  ApiGatewayEndpoint:
-    Type: String
-    Default: pending
-
   CloudFrontDistributionId:
     Type: String
     Default: pending
@@ -178,15 +174,7 @@ Resources:
       Name: !Sub "/vtp/${Environment}/alb/dns-name"
       Type: String
       Value: !Ref AlbDnsName
-      Description: ALB DNS name for Route 53 alias records
-
-  ApiGatewayEndpointParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/vtp/${Environment}/urls/api-gateway-endpoint"
-      Type: String
-      Value: !Ref ApiGatewayEndpoint
-      Description: Public API URL (WAF-protected API Gateway or custom domain)
+      Description: ALB DNS name for Route 53 alias records and interim API access
 
   CloudFrontDistributionIdParameter:
     Type: AWS::SSM::Parameter

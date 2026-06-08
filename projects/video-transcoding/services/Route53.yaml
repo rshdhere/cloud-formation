@@ -24,20 +24,6 @@ Parameters:
     Type: String
     Description: xxx.cloudfront.net domain from the distribution
 
-  ApiRegionalDomainName:
-    Type: String
-    Default: ""
-    Description: API Gateway regional domain for api.domain (WAF-protected)
-
-  ApiRegionalHostedZoneId:
-    Type: String
-    Default: ""
-    Description: API Gateway regional hosted zone ID
-
-Conditions:
-  UseApiGatewayDomain: !Not [!Equals [!Ref ApiRegionalDomainName, ""]]
-  UseAlbForApi: !Equals [!Ref ApiRegionalDomainName, ""]
-
 Resources:
   CdnARecord:
     Type: AWS::Route53::RecordSet
@@ -83,33 +69,8 @@ Resources:
         HostedZoneId: !Ref AlbHostedZoneId
         EvaluateTargetHealth: true
 
-  ApiARecordApiGateway:
+  ApiARecord:
     Type: AWS::Route53::RecordSet
-    Condition: UseApiGatewayDomain
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Sub "api.${DomainName}"
-      Type: A
-      AliasTarget:
-        DNSName: !Ref ApiRegionalDomainName
-        HostedZoneId: !Ref ApiRegionalHostedZoneId
-        EvaluateTargetHealth: false
-
-  ApiAAAARecordApiGateway:
-    Type: AWS::Route53::RecordSet
-    Condition: UseApiGatewayDomain
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Sub "api.${DomainName}"
-      Type: AAAA
-      AliasTarget:
-        DNSName: !Ref ApiRegionalDomainName
-        HostedZoneId: !Ref ApiRegionalHostedZoneId
-        EvaluateTargetHealth: false
-
-  ApiARecordAlb:
-    Type: AWS::Route53::RecordSet
-    Condition: UseAlbForApi
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Sub "api.${DomainName}"
@@ -119,9 +80,8 @@ Resources:
         HostedZoneId: !Ref AlbHostedZoneId
         EvaluateTargetHealth: true
 
-  ApiAAAARecordAlb:
+  ApiAAAARecord:
     Type: AWS::Route53::RecordSet
-    Condition: UseAlbForApi
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Sub "api.${DomainName}"

@@ -27,6 +27,11 @@ Parameters:
     Default: ""
     Description: ACM certificate ARN for HTTPS (optional until Route 53 validation)
 
+  ApiRateLimit:
+    Type: Number
+    Default: 1000
+    Description: WAF rate limit per 5-minute window per IP
+
 Conditions:
   HasCertificate: !Not [!Equals [!Ref AlbCertificateArn, ""]]
 
@@ -108,7 +113,7 @@ Resources:
             ContentType: text/plain
             MessageBody: Not Found
 
-  HttpApiHostRule:
+  ApiHostRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
       ListenerArn: !Ref HttpListener
@@ -182,6 +187,67 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref WebTargetGroup
 
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "vtp-${Environment}-alb-waf"
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "vtp-${Environment}-alb-waf"
+      Rules:
+        - Name: RateLimitPerIp
+          Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref ApiRateLimit
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub "vtp-${Environment}-alb-rate-limit"
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub "vtp-${Environment}-alb-common-rules"
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub "vtp-${Environment}-alb-bad-inputs"
+      Tags:
+        - Key: Name
+          Value: !Sub "vtp-${Environment}-alb-waf"
+        - Key: Project
+          Value: video-transcoding
+
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    DependsOn: ApplicationLoadBalancer
+    Properties:
+      ResourceArn: !Ref ApplicationLoadBalancer
+      WebACLArn: !GetAtt WebACL.Arn
+
 Outputs:
   AlbArn:
     Description: Application Load Balancer ARN
@@ -203,29 +269,6 @@ Outputs:
     Description: Web target group ARN
     Value: !Ref WebTargetGroup
 
-  HttpListenerArn:
-    Description: HTTP listener ARN for API Gateway integration
-    Value: !Ref HttpListener
-
-  HttpsListenerArn:
-    Description: HTTPS listener ARN (empty when no certificate)
-    Condition: HasCertificate
-    Value: !Ref HttpsListener
-
-  AlbIntegrationListenerArn:
-    Description: Listener ARN used by API Gateway VPC Link integrations
-    Value: !If
-      - HasCertificate
-      - !Ref HttpsListener
-      - !Ref HttpListener
-
-  AlbIntegrationUrl:
-    Description: ALB URL for API Gateway HTTP proxy (INTERNET) integration
-    Value: !If
-      - HasCertificate
-      - !Sub
-        - "https://${AlbDnsName}"
-        - AlbDnsName: !GetAtt ApplicationLoadBalancer.DNSName
-      - !Sub
-        - "http://${AlbDnsName}"
-        - AlbDnsName: !GetAtt ApplicationLoadBalancer.DNSName
+  WebAclArn:
+    Description: Regional WAF WebACL ARN associated with the ALB
+    Value: !GetAtt WebACL.Arn
