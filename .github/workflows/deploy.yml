@@ -40,8 +40,18 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsBootstrap
 
+      - name: Detect shared-security auth mode
+        id: security_auth
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
+        run: |
+          if aws iam get-role --role-name GithubActionsCloudFormationRole >/dev/null 2>&1; then
+            echo "mode=oidc" >> "${GITHUB_OUTPUT}"
+          else
+            echo "mode=bootstrap" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Configure AWS credentials
-        if: ${{ env.HAS_BOOTSTRAP_CREDS != 'true' }}
+        if: ${{ env.HAS_BOOTSTRAP_CREDS != 'true' || steps.security_auth.outputs.mode == 'oidc' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
@@ -73,8 +83,28 @@ jobs:
       - name: Deploy shared security
         run: |
           create_deploy_user_iam="true"
-          if [ "${HAS_BOOTSTRAP_CREDS}" = "true" ]; then
+          if [ "${HAS_BOOTSTRAP_CREDS}" = "true" ] && [ "${SECURITY_AUTH_MODE:-oidc}" = "bootstrap" ]; then
             create_deploy_user_iam="false"
+          fi
+
+          if [ "${create_deploy_user_iam}" = "true" ]; then
+            aws iam delete-user-policy \
+              --user-name transcoding-infra \
+              --policy-name vtp-cloudformation-iam \
+              2>/dev/null || true
+
+            for stack_name in $(aws cloudformation list-stacks \
+              --stack-status-filter DELETE_FAILED \
+              --region "${AWS_REGION}" \
+              --query "StackSummaries[?contains(StackName, 'DeployUserIamStack')].StackName" \
+              --output text); do
+              [ -z "${stack_name}" ] && continue
+              aws cloudformation delete-stack \
+                --stack-name "${stack_name}" \
+                --region "${AWS_REGION}"
+            done
+
+            sleep 15
           fi
 
           aws cloudformation deploy \
@@ -89,17 +119,42 @@ jobs:
               GitHubRepository=cloud-formation \
               GitHubBranch=main \
               CreateDeployUserIam="${create_deploy_user_iam}"
+        env:
+          SECURITY_AUTH_MODE: ${{ steps.security_auth.outputs.mode || 'oidc' }}
 
       - name: Reconfigure AWS credentials via OIDC
-        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' && steps.security_auth.outputs.mode == 'bootstrap' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GithubActionsCloudFormationRole
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsCloudFormation
 
+      - name: Cleanup stale deploy-user IAM resources
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' && steps.security_auth.outputs.mode == 'bootstrap' }}
+        run: |
+          set -euo pipefail
+
+          aws iam delete-user-policy \
+            --user-name transcoding-infra \
+            --policy-name vtp-cloudformation-iam \
+            2>/dev/null || true
+
+          for stack_name in $(aws cloudformation list-stacks \
+            --stack-status-filter DELETE_FAILED \
+            --region "${AWS_REGION}" \
+            --query "StackSummaries[?contains(StackName, 'DeployUserIamStack')].StackName" \
+            --output text); do
+            [ -z "${stack_name}" ] && continue
+            aws cloudformation delete-stack \
+              --stack-name "${stack_name}" \
+              --region "${AWS_REGION}"
+          done
+
+          sleep 15
+
       - name: Attach deploy-user IAM policy
-        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' }}
+        if: ${{ env.HAS_BOOTSTRAP_CREDS == 'true' && steps.security_auth.outputs.mode == 'bootstrap' }}
         run: |
           aws cloudformation deploy \
             --stack-name shared-security \
