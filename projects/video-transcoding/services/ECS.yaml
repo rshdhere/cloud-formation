@@ -70,8 +70,21 @@ Parameters:
   SqsEmailVerificationQueueUrl:
     Type: String
 
-  DatabaseUrlSecretArn:
+  RdsDatabaseSecretArn:
     Type: String
+    Description: RDS-managed master user credentials secret ARN
+
+  RdsProxyEndpoint:
+    Type: String
+    Description: RDS Proxy endpoint hostname
+
+  DatabaseName:
+    Type: String
+    Default: transcodingDB
+
+  DatabasePort:
+    Type: Number
+    Default: 5432
 
   BetterAuthSecretArn:
     Type: String
@@ -222,9 +235,17 @@ Resources:
               Value: "true"
             - Name: RESEND_FROM_EMAIL
               Value: !Ref ResendFromEmail
+            - Name: DB_HOST
+              Value: !Ref RdsProxyEndpoint
+            - Name: DB_NAME
+              Value: !Ref DatabaseName
+            - Name: DB_PORT
+              Value: !Sub "${DatabasePort}"
           Secrets:
-            - Name: DATABASE_URL
-              ValueFrom: !Ref DatabaseUrlSecretArn
+            - Name: DB_USERNAME
+              ValueFrom: !Sub "${RdsDatabaseSecretArn}:username::"
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub "${RdsDatabaseSecretArn}:password::"
             - Name: BETTER_AUTH_SECRET
               ValueFrom: !Sub "${BetterAuthSecretArn}:secret::"
             - Name: RESEND_API_KEY
@@ -278,9 +299,17 @@ Resources:
               Value: "true"
             - Name: RESEND_FROM_EMAIL
               Value: !Ref ResendFromEmail
+            - Name: DB_HOST
+              Value: !Ref RdsProxyEndpoint
+            - Name: DB_NAME
+              Value: !Ref DatabaseName
+            - Name: DB_PORT
+              Value: !Sub "${DatabasePort}"
           Secrets:
-            - Name: DATABASE_URL
-              ValueFrom: !Ref DatabaseUrlSecretArn
+            - Name: DB_USERNAME
+              ValueFrom: !Sub "${RdsDatabaseSecretArn}:username::"
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub "${RdsDatabaseSecretArn}:password::"
             - Name: RESEND_API_KEY
               ValueFrom: !Ref ResendApiKeySecretArn
           LogConfiguration:

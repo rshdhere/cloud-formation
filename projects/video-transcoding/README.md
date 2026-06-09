@@ -153,10 +153,10 @@ S3 bucket policy allows `s3:GetObject` from CloudFront **only** on `hls/*`, `thu
 | `S3TranscodedBucketName` | API/worker `S3_TRANSCODED_BUCKET` |
 | `SqsTranscodingQueueUrl` | API/worker `SQS_TRANSCODING_QUEUE_URL` |
 | `SqsEmailVerificationQueueUrl` | API/worker `SQS_EMAIL_VERIFICATION_QUEUE_URL` |
-| `RdsProxyEndpoint` | `DATABASE_URL` assembly |
-| `DatabaseUrlSecretArn` | ECS secrets injection |
-| `BetterAuthSecretArn` | ECS secrets injection |
-| `ResendApiKeySecretArn` | ECS secrets injection |
+| `RdsProxyEndpoint` | `DB_HOST` on API/worker ECS tasks |
+| `DatabaseSecretArn` | RDS-managed `DB_USERNAME` / `DB_PASSWORD` injection |
+| `BetterAuthSecretArn` | `BETTER_AUTH_SECRET` injection |
+| `ResendApiKeySecretArn` | `RESEND_API_KEY` injection |
 | `EcrApiRepositoryUri` | CI image push + ECS task def |
 | `EcrWorkerRepositoryUri` | CI image push + ECS task def |
 | `EcrWebRepositoryUri` | CI image push + ECS task def |
@@ -181,12 +181,12 @@ All parameters are under `/vtp/{Environment}/`:
 /vtp/prod/sqs/transcoding-queue-url
 /vtp/prod/sqs/email-verification-queue-url
 /vtp/prod/rds/proxy-endpoint
+/vtp/prod/rds/database-secret-arn
 /vtp/prod/ecr/api-repository-uri
 /vtp/prod/ecr/worker-repository-uri
 /vtp/prod/ecr/web-repository-uri
-/vtp/prod/secrets/better-auth-secret-arn
-/vtp/prod/secrets/resend-api-key-arn
-/vtp/prod/secrets/database-url-arn
+/vtp/prod/secrets/auth-arn
+/vtp/prod/secrets/resend-arn
 /vtp/prod/urls/api-public-url
 /vtp/prod/urls/web-public-url
 /vtp/prod/urls/cloudfront-domain
@@ -202,41 +202,41 @@ aws ssm get-parameter --name /vtp/prod/s3/upload-bucket --query Parameter.Value 
 
 ## Secrets Manager
 
+```text
+┌─────────────────┐
+│ Secrets Manager │
+└──────┬──────────┘
+       │
+       ├── vtp/prod/auth          (BETTER_AUTH_SECRET — auto-generated)
+       ├── vtp/prod/resend        (RESEND_API_KEY — set after deploy)
+       └── RDS managed secret     (DB_USERNAME / DB_PASSWORD — auto-managed)
+              │
+              ▼
+┌─────────────────┐
+│   RDS Proxy     │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
+│ ECS API/Worker  │
+└─────────────────┘
+```
+
 | Secret | Path | Notes |
 |--------|------|-------|
-| `BETTER_AUTH_SECRET` | `vtp/prod/better-auth-secret` | Auto-generated 64-char secret |
-| `RESEND_API_KEY` | `vtp/prod/resend-api-key` | Placeholder — update after deploy |
-| `DATABASE_URL` | `vtp/prod/database-url` | Template URL — update password after deploy |
+| `BETTER_AUTH_SECRET` | `vtp/prod/auth` | Auto-generated 64-char secret |
+| `RESEND_API_KEY` | `vtp/prod/resend` | Placeholder — update after deploy |
+| `DB_USERNAME` / `DB_PASSWORD` | RDS-managed secret | `ManageMasterUserPassword: true` — no manual password handling |
 
-### Populate DATABASE_URL (one-off post-deploy)
+RDS creates and rotates the database password. ECS tasks receive `DB_USERNAME` and `DB_PASSWORD` via Secrets Manager JSON key references; `DB_HOST`, `DB_NAME`, and `DB_PORT` are plain environment variables pointing at RDS Proxy.
 
-```bash
-# 1. Get RDS-managed password
-RDS_SECRET_ARN=$(aws cloudformation describe-stacks \
-  --stack-name shared-database \
-  --query "Stacks[0].Outputs[?OutputKey=='DatabaseSecretArn'].OutputValue" \
-  --output text)
-
-DB_PASSWORD=$(aws secretsmanager get-secret-value \
-  --secret-id "$RDS_SECRET_ARN" \
-  --query SecretString --output text | jq -r .password)
-
-PROXY_ENDPOINT=$(aws cloudformation describe-stacks \
-  --stack-name shared-database \
-  --query "Stacks[0].Outputs[?OutputKey=='ProxyEndpoint'].OutputValue" \
-  --output text)
-
-# 2. Write full connection string
-aws secretsmanager put-secret-value \
-  --secret-id vtp/prod/database-url \
-  --secret-string "postgresql://postgres:${DB_PASSWORD}@${PROXY_ENDPOINT}:5432/transcodingDB?sslmode=require"
-```
+**Do not store:** `DATABASE_URL`, `JWT_SECRET`, `API_KEY`, `AWS_ACCESS_KEY_ID`, or `AWS_SECRET_ACCESS_KEY` in Secrets Manager. Use IAM task roles for AWS API access.
 
 ### Update RESEND_API_KEY
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id vtp/prod/resend-api-key \
+  --secret-id vtp/prod/resend \
   --secret-string "re_your_actual_key"
 ```
 
@@ -296,12 +296,16 @@ Use IAM task roles — do **not** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_K
     { "name": "MAX_DAILY_DOWNLOADS", "value": "10" },
     { "name": "UPLOAD_COOLDOWN_SECONDS", "value": "30" },
     { "name": "MAIL_ENABLED", "value": "true" },
-    { "name": "RESEND_FROM_EMAIL", "value": "noreply@yourdomain.com" }
+    { "name": "RESEND_FROM_EMAIL", "value": "noreply@yourdomain.com" },
+    { "name": "DB_HOST", "value": "<rds-proxy-endpoint>" },
+    { "name": "DB_NAME", "value": "transcodingDB" },
+    { "name": "DB_PORT", "value": "5432" }
   ],
   "secrets": [
-    { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/database-url" },
-    { "name": "BETTER_AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/better-auth-secret:secret::" },
-    { "name": "RESEND_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/resend-api-key" }
+    { "name": "DB_USERNAME", "valueFrom": "arn:aws:secretsmanager:...:rds!cluster-...:username::" },
+    { "name": "DB_PASSWORD", "valueFrom": "arn:aws:secretsmanager:...:rds!cluster-...:password::" },
+    { "name": "BETTER_AUTH_SECRET", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/auth:secret::" },
+    { "name": "RESEND_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/resend" }
   ]
 }
 ```
@@ -323,11 +327,15 @@ Use IAM task roles — do **not** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_K
     { "name": "SQS_EMAIL_VERIFICATION_QUEUE_URL", "value": "<from stack output>" },
     { "name": "WORKERS_VERIFICATION_URL", "value": "https://api.yourdomain.com/api/v1/auth/verify-email" },
     { "name": "MAIL_ENABLED", "value": "true" },
-    { "name": "RESEND_FROM_EMAIL", "value": "noreply@yourdomain.com" }
+    { "name": "RESEND_FROM_EMAIL", "value": "noreply@yourdomain.com" },
+    { "name": "DB_HOST", "value": "<rds-proxy-endpoint>" },
+    { "name": "DB_NAME", "value": "transcodingDB" },
+    { "name": "DB_PORT", "value": "5432" }
   ],
   "secrets": [
-    { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/database-url" },
-    { "name": "RESEND_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/resend-api-key" }
+    { "name": "DB_USERNAME", "valueFrom": "arn:aws:secretsmanager:...:rds!cluster-...:username::" },
+    { "name": "DB_PASSWORD", "valueFrom": "arn:aws:secretsmanager:...:rds!cluster-...:password::" },
+    { "name": "RESEND_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:secret:vtp/prod/resend" }
   ]
 }
 ```
@@ -349,9 +357,9 @@ Run migrations from the app repo (`packages/drizzle`) against RDS Proxy — not 
 **Option A — one-off ECS task** (after Phase 2):
 
 ```bash
-# Run migration container with DATABASE_URL secret, same VPC/subnets as API
+# Run migration container with DB_* env vars + RDS secret, same VPC/subnets as API
 aws ecs run-task \
-  --cluster vtp-cluster \
+  --cluster vtp-prod \
   --task-definition vtp-migrate \
   --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx]}"
@@ -360,14 +368,14 @@ aws ecs run-task \
 **Option B — CI step** (from a runner with VPC access or SSM port-forward):
 
 ```bash
-DATABASE_URL="postgresql://..." bun run db:migrate
+DB_HOST="<proxy-endpoint>" DB_NAME=transcodingDB DB_PORT=5432 \
+  DB_USERNAME=postgres DB_PASSWORD="<from-rds-secret>" bun run db:migrate
 ```
 
 ## Post-deploy checklist
 
 - [ ] Set GitHub variable `DOMAIN_NAME` to your real domain
-- [ ] Populate `vtp/prod/database-url` secret (see above)
-- [ ] Populate `vtp/prod/resend-api-key` secret
+- [ ] Populate `vtp/prod/resend` secret
 - [ ] Push container images to ECR (`vtp-api`, `vtp-worker`, `vtp-web`)
 - [ ] Run DB migrations via app repo
 - [ ] Request ACM certs (regional + us-east-1) and complete DNS validation

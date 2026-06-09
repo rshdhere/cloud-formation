@@ -142,7 +142,6 @@ Resources:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/projects/video-transcoding/services/Secrets.yaml"
       Parameters:
         Environment: !Ref Environment
-        RdsProxyEndpoint: !ImportValue shared-database-ProxyEndpoint
         ResendFromEmail: !Ref ResendFromEmail
 
   IamStack:
@@ -159,7 +158,7 @@ Resources:
         TranscodedBucketArn: !GetAtt S3Stack.Outputs.TranscodedBucketArn
         TranscodingQueueArn: !GetAtt QueuesStack.Outputs.TranscodingQueueArn
         EmailVerificationQueueArn: !GetAtt QueuesStack.Outputs.EmailVerificationQueueArn
-        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        RdsDatabaseSecretArn: !ImportValue shared-database-DatabaseSecretArn
         BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
         ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
 
@@ -210,7 +209,8 @@ Resources:
         TranscodedBucketName: !GetAtt S3Stack.Outputs.TranscodedBucketName
         SqsTranscodingQueueUrl: !GetAtt QueuesStack.Outputs.SqsTranscodingQueueUrl
         SqsEmailVerificationQueueUrl: !GetAtt QueuesStack.Outputs.SqsEmailVerificationQueueUrl
-        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        RdsDatabaseSecretArn: !ImportValue shared-database-DatabaseSecretArn
+        RdsProxyEndpoint: !ImportValue shared-database-ProxyEndpoint
         BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
         ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
         ResendFromEmail: !Ref ResendFromEmail
@@ -288,7 +288,7 @@ Resources:
         EcrWebRepositoryUri: !GetAtt EcrStack.Outputs.EcrWebRepositoryUri
         BetterAuthSecretArn: !GetAtt SecretsStack.Outputs.BetterAuthSecretArn
         ResendApiKeySecretArn: !GetAtt SecretsStack.Outputs.ResendApiKeySecretArn
-        DatabaseUrlSecretArn: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
+        RdsDatabaseSecretArn: !ImportValue shared-database-DatabaseSecretArn
         DomainName: !Ref DomainName
         AlbDnsName: !GetAtt AlbStack.Outputs.AlbDnsName
         CloudFrontDistributionId: !GetAtt CloudFrontStack.Outputs.CloudFrontDistributionId
@@ -365,12 +365,6 @@ Outputs:
     Value: !ImportValue shared-database-DatabaseSecretArn
     Export:
       Name: !Sub "${AWS::StackName}-DatabaseSecretArn"
-
-  DatabaseUrlSecretArn:
-    Description: Secrets Manager ARN for DATABASE_URL
-    Value: !GetAtt SecretsStack.Outputs.DatabaseUrlSecretArn
-    Export:
-      Name: !Sub "${AWS::StackName}-DatabaseUrlSecretArn"
 
   BetterAuthSecretArn:
     Description: Secrets Manager ARN for BETTER_AUTH_SECRET

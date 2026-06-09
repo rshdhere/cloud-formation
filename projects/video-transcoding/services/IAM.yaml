@@ -18,8 +18,9 @@ Parameters:
   EmailVerificationQueueArn:
     Type: String
 
-  DatabaseUrlSecretArn:
+  RdsDatabaseSecretArn:
     Type: String
+    Description: RDS-managed master user credentials secret ARN
 
   BetterAuthSecretArn:
     Type: String
@@ -61,7 +62,7 @@ Resources:
             Action:
               - secretsmanager:GetSecretValue
             Resource:
-              - !Ref DatabaseUrlSecretArn
+              - !Ref RdsDatabaseSecretArn
               - !Ref BetterAuthSecretArn
               - !Ref ResendApiKeySecretArn
 
@@ -120,24 +121,6 @@ Resources:
             Resource:
               - !Ref TranscodingQueueArn
               - !Ref EmailVerificationQueueArn
-
-  ApiSecretsPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: !Sub "vtp-${Environment}-api-secrets"
-      Roles:
-        - !Ref ApiTaskRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: ReadAppSecrets
-            Effect: Allow
-            Action:
-              - secretsmanager:GetSecretValue
-            Resource:
-              - !Ref DatabaseUrlSecretArn
-              - !Ref BetterAuthSecretArn
-              - !Ref ResendApiKeySecretArn
 
   WorkerTaskRole:
     Type: AWS::IAM::Role
@@ -209,23 +192,6 @@ Resources:
             Resource:
               - !Ref TranscodingQueueArn
               - !Ref EmailVerificationQueueArn
-
-  WorkerSecretsPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: !Sub "vtp-${Environment}-worker-secrets"
-      Roles:
-        - !Ref WorkerTaskRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: ReadWorkerSecrets
-            Effect: Allow
-            Action:
-              - secretsmanager:GetSecretValue
-            Resource:
-              - !Ref DatabaseUrlSecretArn
-              - !Ref ResendApiKeySecretArn
 
   WebTaskRole:
     Type: AWS::IAM::Role

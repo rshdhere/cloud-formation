@@ -40,8 +40,9 @@ Parameters:
   ResendApiKeySecretArn:
     Type: String
 
-  DatabaseUrlSecretArn:
+  RdsDatabaseSecretArn:
     Type: String
+    Description: RDS-managed master user credentials secret ARN
 
   DomainName:
     Type: String
@@ -94,7 +95,15 @@ Resources:
       Name: !Sub "/vtp/${Environment}/rds/proxy-endpoint"
       Type: String
       Value: !Ref RdsProxyEndpoint
-      Description: RDS Proxy endpoint for DATABASE_URL assembly
+      Description: DB_HOST for ECS tasks (RDS Proxy endpoint)
+
+  RdsDatabaseSecretArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/vtp/${Environment}/rds/database-secret-arn"
+      Type: String
+      Value: !Ref RdsDatabaseSecretArn
+      Description: RDS-managed secret ARN for DB_USERNAME and DB_PASSWORD injection
 
   EcrApiRepositoryUriParameter:
     Type: AWS::SSM::Parameter
@@ -123,7 +132,7 @@ Resources:
   BetterAuthSecretArnParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub "/vtp/${Environment}/secrets/better-auth-secret-arn"
+      Name: !Sub "/vtp/${Environment}/secrets/auth-arn"
       Type: String
       Value: !Ref BetterAuthSecretArn
       Description: Secrets Manager ARN for BETTER_AUTH_SECRET
@@ -131,18 +140,10 @@ Resources:
   ResendApiKeySecretArnParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub "/vtp/${Environment}/secrets/resend-api-key-arn"
+      Name: !Sub "/vtp/${Environment}/secrets/resend-arn"
       Type: String
       Value: !Ref ResendApiKeySecretArn
       Description: Secrets Manager ARN for RESEND_API_KEY
-
-  DatabaseUrlSecretArnParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/vtp/${Environment}/secrets/database-url-arn"
-      Type: String
-      Value: !Ref DatabaseUrlSecretArn
-      Description: Secrets Manager ARN for DATABASE_URL
 
   ApiPublicUrlParameter:
     Type: AWS::SSM::Parameter
